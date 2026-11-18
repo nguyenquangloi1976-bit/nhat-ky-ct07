@@ -80,6 +80,10 @@
                 class="text-xs text-primary-600 hover:underline">
                 {{ hasBridgeParts ? 'Sửa số trụ, số nhịp' : 'Khai báo mố, trụ, nhịp' }}
               </button>
+              <button v-if="isBridge && isAdmin && hasBridgeParts" @click="openDesignQty"
+                class="text-xs text-amber-600 hover:underline">
+                KL thiết kế
+              </button>
               <button v-if="entry && !entry.is_locked && rows.length" ref="addMoreBtn"
                 @click="scrollToPicker"
                 class="px-2.5 py-1 rounded bg-primary-50 text-primary-700 border border-primary-200 text-xs font-medium hover:bg-primary-100 transition">
@@ -413,6 +417,61 @@
       </div>
     </div>
 
+    <!-- Modal khai báo KL thiết kế cầu -->
+    <div v-if="showDesignQtyModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+      @click.self="showDesignQtyModal = false">
+      <div class="bg-white rounded-lg shadow-xl p-5 w-full max-w-4xl max-h-[85vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-gray-800">Khai báo KL thiết kế cầu</h3>
+          <button @click="showDesignQtyModal = false" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">Nhập khối lượng thiết kế cho các hạng mục chính. Nhấn Lưu để cập nhật.</p>
+
+        <!-- Tabs bộ phận -->
+        <div class="flex flex-wrap gap-1 mb-3 border-b pb-2">
+          <button v-for="g in designQtyGroups" :key="g"
+            @click="designQtyTab = g"
+            class="px-2 py-1 text-xs rounded-md transition-colors"
+            :class="designQtyTab === g ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-500 hover:bg-gray-100'">
+            {{ g }}
+          </button>
+        </div>
+
+        <!-- Bảng hạng mục -->
+        <table class="w-full text-sm border-collapse">
+          <thead>
+            <tr class="bg-gray-50 text-gray-600">
+              <th class="text-left px-2 py-1.5 font-medium">Hạng mục</th>
+              <th class="text-center px-2 py-1.5 font-medium w-16">ĐV</th>
+              <th class="text-center px-2 py-1.5 font-medium w-32">KL thiết kế</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in designQtyItems" :key="item.id" class="border-b border-gray-100">
+              <td class="px-2 py-1.5 text-gray-700">{{ item.name }}</td>
+              <td class="px-2 py-1.5 text-center text-gray-500">{{ item.unit }}</td>
+              <td class="px-2 py-1.5">
+                <input v-model.number="designQtyValues[item.id]"
+                  type="number" step="0.01" min="0"
+                  class="input-field w-full text-center text-sm"
+                  :placeholder="item.unit === 'cọc' || item.unit === 'dầm' || item.unit === 'sợi' || item.unit === 'bộ' || item.unit === 'ngày' ? '0' : '0.00'"
+                  :step="isIntegerUnit(item.unit) || item.unit === 'dầm' || item.unit === 'sợi' || item.unit === 'bộ' || item.unit === 'ngày' ? 1 : 0.01" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="flex justify-end gap-2 mt-4">
+          <button @click="showDesignQtyModal = false"
+            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">Hủy</button>
+          <button @click="saveDesignQty" :disabled="savingDesignQty"
+            class="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 text-sm font-medium">
+            {{ savingDesignQty ? 'Đang lưu...' : 'Lưu KL thiết kế' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal thêm công trình nhanh -->
     <div v-if="showStructureModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
       @click.self="showStructureModal = false">
@@ -451,7 +510,7 @@
 definePageMeta({ middleware: 'auth' })
 
 const { $supabase } = useNuxtApp()
-const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure } = useStructures()
+const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure, updateWorkItem } = useStructures()
 const { getOrCreateEntry, saveLine, deleteLine, updateEntry, lockEntry, unlockEntry } = useDiary()
 const { calcVolume } = useLayerVolume()
 const { currentProject } = useProject()
@@ -620,6 +679,59 @@ async function saveBridgeSetup() {
     showError(e.message)
   } finally {
     savingBridge.value = false
+  }
+}
+
+// ----- Khai báo KL thiết kế cầu -----
+const showDesignQtyModal = ref(false)
+const savingDesignQty = ref(false)
+const designQtyTab = ref('')
+const designQtyValues = reactive<Record<string, number | null>>({})
+
+const designQtyGroups = computed(() => {
+  const groups: string[] = []
+  for (const w of workItems.value) {
+    const g = w.group_name || ''
+    if (g && !groups.includes(g)) groups.push(g)
+  }
+  return groups
+})
+
+const designQtyItems = computed(() => {
+  return workItems.value.filter(w => (w.group_name || '') === designQtyTab.value)
+})
+
+function openDesignQty() {
+  // Populate current design_quantity values
+  for (const w of workItems.value) {
+    designQtyValues[w.id] = w.design_quantity ?? null
+  }
+  designQtyTab.value = designQtyGroups.value[0] || ''
+  showDesignQtyModal.value = true
+}
+
+async function saveDesignQty() {
+  savingDesignQty.value = true
+  try {
+    let count = 0
+    for (const w of workItems.value) {
+      const newVal = designQtyValues[w.id]
+      const oldVal = w.design_quantity ?? null
+      // Chỉ update khi thay đổi
+      const nv = (newVal === null || newVal === undefined || newVal === 0) ? null : Number(newVal)
+      const ov = (oldVal === null || oldVal === undefined || oldVal === 0) ? null : Number(oldVal)
+      if (nv !== ov) {
+        await updateWorkItem(w.id, { design_quantity: nv } as any)
+        w.design_quantity = nv
+        count++
+      }
+    }
+    showDesignQtyModal.value = false
+    success(count > 0 ? `Đã cập nhật ${count} hạng mục` : 'Không có thay đổi')
+  } catch (e: any) {
+    showError(e.message)
+  } finally {
+    savingDesignQty.value = false
   }
 }
 
