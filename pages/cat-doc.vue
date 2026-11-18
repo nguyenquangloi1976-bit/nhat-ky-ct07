@@ -315,11 +315,17 @@ function buildRows(side: 'T' | 'P' | null) {
     const count = Math.max(cfg, cfg > 1 || maxBatch > 1 ? maxBatch : 1)
     // Lớp 1 = trên cùng (tiếp giáp móng mặt đường), lớp N = đáy (đắp đầu tiên)
     // Duyệt 1→N để lớp 1 hiển thị ở trên, lớp N ở dưới
-    // Khi ghi lớp X → đã đắp từ đáy đến lớp X → tô tất cả lớp từ N đến X
-    // Lớp `lift` được tô nếu có diary line có batch_number ≤ lift (đã đắp qua lớp lift)
+    // Ghi lớp X → đã đắp từ đáy (N) lên đến lớp X → tô lớp X, X+1, ..., N
+    // Lớp `lift` được tô nếu có diary line có batch_number ≤ lift (line ở lớp cao hơn → đã qua lift)
     for (let lift = 1; lift <= count; lift++) {
       const segs = mine
-        .filter(l => count === 1 || (Number(l.batch_number) || 1) <= lift)
+        .filter(l => {
+          if (count === 1) return true
+          const bn = Number(l.batch_number) || 1
+          // bn là lớp cao nhất đã đắp đến → các lớp từ bn đến N (đáy) đã xong
+          // lift >= bn nghĩa là lift nằm trong vùng đã đắp (từ bn đến N)
+          return lift >= bn
+        })
         .map(l => {
           const a0 = Number(l.km_from)
           const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)

@@ -537,7 +537,7 @@ definePageMeta({ middleware: 'auth' })
 const { $supabase } = useNuxtApp()
 const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure, updateWorkItem } = useStructures()
 const { getOrCreateEntry, saveLine, deleteLine, updateEntry, lockEntry, unlockEntry } = useDiary()
-const { calcVolume } = useLayerVolume()
+const { calcVolume, calcCumulativeVolume } = useLayerVolume()
 const { currentProject } = useProject()
 const { isAdmin } = useAuth()
 const { success, error: showError } = useToast()
@@ -844,16 +844,16 @@ async function autoCalcK95(row: any) {
   _calcTimers.set(key, setTimeout(async () => {
     _calcTimers.delete(key)
     try {
-      const result = await calcVolume({
+      const quantity = await calcCumulativeVolume({
         side: line.side as 'T' | 'P',
-        layer: Number(line.batch_number),
+        currentLayer: Number(line.batch_number),
         kmFrom: Math.min(kmFrom, kmTo),
         kmTo: Math.max(kmFrom, kmTo),
       })
-      if (result.volume > 0) {
-        line.quantity = result.volume
+      if (quantity > 0) {
+        line.quantity = quantity
         line._autoCalc = true
-        line._autoCalcFormula = result.formula
+        line._autoCalcFormula = `Tổng lớp ${Number(line.batch_number)}→đáy`
       }
     } catch (e) {
       console.warn('Auto-calc K95 failed:', e)
