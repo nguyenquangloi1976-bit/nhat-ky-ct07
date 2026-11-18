@@ -165,7 +165,7 @@ const { listLines } = useDiary()
 const { currentProject } = useProject()
 const { success, error: showError } = useToast()
 const { $supabase } = useNuxtApp()
-const { calcVolume, calcArea } = useLayerVolume()
+const { calcVolume, calcArea, calcCumulativeVolume } = useLayerVolume()
 
 const types = ref<any[]>([])
 const allStructures = ref<any[]>([])
@@ -663,17 +663,26 @@ async function recalcVolumes() {
       if (kmFrom === kmTo) { stats[detected.label].skipped++; totalSkipped++; continue }
 
       try {
-        const calcParams = {
-          side: line.side as 'T' | 'P',
-          layer: Number(line.batch_number),
-          kmFrom,
-          kmTo,
-          itemType: detected.itemType,
+        // m² (BTN) → calcArea cho 1 lớp
+        // m³ (K95…) → calcCumulativeVolume: tổng từ lớp đáy đến lớp hiện tại
+        let quantity: number
+        if (detected.unit === 'm2') {
+          quantity = (await calcArea({
+            side: line.side as 'T' | 'P',
+            layer: Number(line.batch_number),
+            kmFrom,
+            kmTo,
+            itemType: detected.itemType,
+          })).area
+        } else {
+          quantity = await calcCumulativeVolume({
+            side: line.side as 'T' | 'P',
+            currentLayer: Number(line.batch_number),
+            kmFrom,
+            kmTo,
+            itemType: detected.itemType,
+          })
         }
-        // m² (BTN) → calcArea, m³ (K95…) → calcVolume
-        const quantity = detected.unit === 'm2'
-          ? (await calcArea(calcParams)).area
-          : (await calcVolume(calcParams)).volume
         const result = { volume: quantity }
 
         if (result.volume > 0 && Math.abs(result.volume - (line.quantity || 0)) > 0.01) {

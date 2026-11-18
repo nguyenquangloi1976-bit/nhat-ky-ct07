@@ -315,18 +315,23 @@ function buildRows(side: 'T' | 'P' | null) {
     const count = Math.max(cfg, cfg > 1 || maxBatch > 1 ? maxBatch : 1)
     // Lớp 1 = trên cùng (tiếp giáp móng mặt đường), lớp N = đáy (đắp đầu tiên)
     // Duyệt 1→N để lớp 1 hiển thị ở trên, lớp N ở dưới
+    // Khi ghi lớp X → đã đắp từ đáy đến lớp X → tô tất cả lớp từ N đến X
+    // Lớp `lift` được tô nếu có diary line có batch_number ≤ lift (đã đắp qua lớp lift)
     for (let lift = 1; lift <= count; lift++) {
       const segs = mine
-        .filter(l => count === 1 || (Number(l.batch_number) || 1) === lift)
+        .filter(l => count === 1 || (Number(l.batch_number) || 1) <= lift)
         .map(l => {
           const a0 = Number(l.km_from)
           const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
           const a = Math.max(start, Math.min(a0, b0))
           const b = Math.min(end, Math.max(a0, b0))
           const e = l.diary_entries || {}
+          const lineLift = Number(l.batch_number) || 1
           return {
             id: l.id, a, b,
-            title: `${def.name}${count > 1 ? ' – lớp ' + lift : ''}\n${fmtDate(e.entry_date)} · ${formatKm(a0)} – ${formatKm(b0)}` +
+            title: `${def.name}${count > 1 ? ' – lớp ' + lift : ''}` +
+              (lineLift !== lift ? ` (đắp đến lớp ${lineLift})` : '') +
+              `\n${fmtDate(e.entry_date)} · ${formatKm(a0)} – ${formatKm(b0)}` +
               `\nKL: ${l.quantity} ${l.work_items?.unit || ''}${l.notes ? '\n' + l.notes : ''}`,
           }
         })
