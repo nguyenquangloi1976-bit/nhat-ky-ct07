@@ -225,8 +225,54 @@ const layerDefs = computed(() => {
   return defs.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'vi'))
 })
 
+// Max layer count từ ĐTPL (layer_sections) cho mỗi item_type → tên hạng mục
+const dtplLayerCounts = ref<Record<string, number>>({})
+
+// Map item_type → regex khớp tên hạng mục (ngược lại ITEM_TYPE_MAP trong reports)
+const ITEM_TYPE_NAME_MAP: { itemType: string; pattern: RegExp }[] = [
+  { itemType: 'K95', pattern: /k95/i },
+  { itemType: 'K98', pattern: /k98/i },
+  { itemType: 'XLNDY', pattern: /xử lý nền|xlndy|xử lí nền/i },
+  { itemType: 'BUL', pattern: /bù lún|bul/i },
+  { itemType: 'CPDD1', pattern: /cpđd[^,;]*loại i\b|cpđd i\b|cpdd.?loai.?i\b|cpđd.?i(?!i)/i },
+  { itemType: 'CPDD_GCXM', pattern: /gcxm|gia cố xi măng/i },
+  { itemType: 'CPDD2', pattern: /cpđd[^,;]*loại ii\b|cpđd ii\b|cpdd.?loai.?ii\b/i },
+  { itemType: 'BTN_R25', pattern: /btn.?rỗng|btn.?r.?25/i },
+  { itemType: 'BTN_C19', pattern: /btn.?chặt.?19|btn.?c.?19/i },
+  { itemType: 'BTN_C125', pattern: /btn.?chặt.?12[,.]?5|btn.?c.?12[,.]?5/i },
+]
+
+function _itemTypeForName(name: string): string | null {
+  const n = name.toLowerCase()
+  for (const m of ITEM_TYPE_NAME_MAP) {
+    if (m.pattern.test(n)) return m.itemType
+  }
+  return null
+}
+
+async function loadDtplLayerCounts() {
+  const pid = currentProject.value?.id
+  if (!pid) return
+  // Query max layer per item_type from layer_sections
+  const { data, error } = await $supabase
+    .from('layer_sections')
+    .select('item_type, layer')
+    .eq('project_id', pid)
+  if (error || !data) return
+  const maxByType: Record<string, number> = {}
+  for (const row of data) {
+    const t = row.item_type || 'K95'
+    if (!maxByType[t] || row.layer > maxByType[t]) maxByType[t] = row.layer
+  }
+  dtplLayerCounts.value = maxByType
+}
+
 function liftCount(name: string) {
-  return liftCfg.value[name] ?? 1
+  // Ưu tiên: user config > ĐTPL max layer > default 1
+  if (liftCfg.value[name] !== undefined) return liftCfg.value[name]
+  const itemType = _itemTypeForName(name)
+  if (itemType && dtplLayerCounts.value[itemType]) return dtplLayerCounts.value[itemType]
+  return 1
 }
 function setLiftCount(name: string, n: number) {
   liftCfg.value = { ...liftCfg.value, [name]: Math.max(0, Math.min(30, Math.floor(n) || 0)) }
@@ -267,8 +313,9 @@ function buildRows(side: 'T' | 'P' | null) {
     const cfg = liftCount(def.name)
     if (cfg === 0) continue
     const count = Math.max(cfg, cfg > 1 || maxBatch > 1 ? maxBatch : 1)
-    // Một lớp con duy nhất: gộp mọi đợt vào 1 dải
-    for (let lift = count; lift >= 1; lift--) {
+    // Lớp 1 = trên cùng (tiếp giáp móng mặt đường), lớp N = đáy (đắp đầu tiên)
+    // Duyệt 1→N để lớp 1 hiển thị ở trên, lớp N ở dưới
+    for (let lift = 1; lift <= count; lift++) {
       const segs = mine
         .filter(l => count === 1 || (Number(l.batch_number) || 1) === lift)
         .map(l => {
@@ -379,6 +426,9 @@ async function loadStructure() {
     workItems.value = wi
     lines.value = ln
     catalogItems.value = (cat as any).data || []
+
+    // Load max layer counts from ĐTPL data
+    await loadDtplLayerCounts()
 
     // Khoảng lý trình: ưu tiên thiết lập đã lưu → mô tả công trình → theo dữ liệu nhật ký
     const saved = readLocal()
