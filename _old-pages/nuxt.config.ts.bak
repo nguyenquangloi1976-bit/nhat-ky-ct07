@@ -1,0 +1,30 @@
+// https://nuxt.com/docs/api/configuration/nuxt-config
+export default defineNuxtConfig({
+  compatibilityDate: '2024-11-01',
+  devtools: { enabled: false },
+
+  modules: [
+    '@nuxtjs/tailwindcss',
+    '@pinia/nuxt',
+  ],
+
+  runtimeConfig: {
+    public: {
+      supabaseUrl: process.env.SUPABASE_URL || '',
+      supabaseKey: process.env.SUPABASE_KEY || '',
+    },
+  },
+
+  app: {
+    head: {
+      title: 'Nhật ký thi công CT.07',
+      meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'description', content: 'Nhật ký thi công – Gói thầu TV-08 – CT.07 Hà Nội – Thái Nguyên' },
+      ],
+      link: [
+        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+      ],
+    },
+  },
+})

@@ -1,0 +1,714 @@
+<template>
+  <div>
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-4">
+      <h1 class="text-xl font-bold text-gray-800">Ghi nhật ký thi công</h1>
+      <div class="flex items-center gap-3">
+        <input v-model="selectedDate" type="date" class="input-field text-sm" @change="onDateChange" />
+        <NuxtLink to="/diary" class="text-sm text-primary-600 hover:underline">← Danh sách</NuxtLink>
+      </div>
+    </div>
+
+    <div v-if="loading" class="text-center text-gray-400 py-12">Đang tải danh mục...</div>
+
+    <template v-else>
+      <!-- Tầng 1: Tabs loại công trình -->
+      <div class="tabs-strip">
+        <button v-for="(t, idx) in types" :key="t.id"
+          @click="selectTab(idx)"
+          class="tab-btn"
+          :class="{ active: activeTab === idx }">
+          {{ t.name }}
+          <span v-if="getEntryCountForType(t.id)" class="tab-badge">{{ getEntryCountForType(t.id) }}</span>
+        </button>
+      </div>
+
+      <!-- Tầng 2: Chips công trình -->
+      <div v-if="currentStructures.length" class="chips-strip">
+        <button v-for="(s, idx) in currentStructures" :key="s.id"
+          @click="selectChip(idx)"
+          class="chip-btn"
+          :class="{ active: activeChip === idx }">
+          {{ s.name }}
+          <span v-if="getEntryStatus(s.id)" class="chip-dot" :class="getEntryStatus(s.id)"></span>
+        </button>
+      </div>
+      <div v-else-if="types.length" class="text-center text-gray-400 py-8 text-sm">
+        Chưa có công trình nào cho loại "{{ types[activeTab]?.name }}"
+      </div>
+
+      <!-- Tầng 3: Bảng khối lượng -->
+      <div v-if="currentStructure" class="mt-4">
+        <!-- Sticky header: tên công trình + trạng thái -->
+        <div class="structure-header">
+          <div>
+            <h2 class="font-semibold text-gray-800">{{ currentStructure.name }}</h2>
+            <p class="text-xs text-gray-500">{{ types[activeTab]?.name }} · {{ selectedDate }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span v-if="entry?.is_locked" class="status-badge locked">Đã khóa</span>
+            <span v-else-if="entry" class="status-badge draft">Nháp</span>
+            <span v-else class="status-badge new">Mới</span>
+          </div>
+        </div>
+
+        <!-- Loading entry -->
+        <div v-if="loadingEntry" class="text-center text-gray-400 py-8 text-sm">Đang tải dữ liệu...</div>
+
+        <!-- Table content -->
+        <div v-else class="table-card">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="tbl-hdr">
+                <th class="text-left px-3 py-2 min-w-[200px]">Hạng mục</th>
+                <th class="text-center px-3 py-2 w-16">ĐV</th>
+                <th class="text-center px-3 py-2 w-20">KL TK</th>
+                <th v-if="showLeftRight" class="text-center px-3 py-2 w-16">Bên</th>
+                <th class="text-center px-3 py-2 w-16">Đợt</th>
+                <th class="text-center px-3 py-2 w-28">KL thực hiện</th>
+                <th class="text-left px-3 py-2">Ghi chú</th>
+                <th v-if="!entry?.is_locked" class="px-2 py-2 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="(group, gIdx) in groupedLines" :key="gIdx">
+                <!-- Group header -->
+                <tr v-if="group.name" class="tbl-group" @click="toggleGroup(group.name)">
+                  <td :colspan="colSpan" class="px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs transition-transform" :class="{ 'rotate-90': !collapsedGroups[group.name] }">▶</span>
+                      <span class="font-medium text-sm">{{ group.name }}</span>
+                      <span class="text-xs text-gray-400">({{ group.lines.length }})</span>
+                    </div>
+                  </td>
+                </tr>
+                <!-- Group rows -->
+                <template v-if="!group.name || !collapsedGroups[group.name]">
+                  <tr v-for="(line, idx) in group.lines" :key="line._idx"
+                    class="tbl-row">
+                    <td class="px-3 py-1.5">
+                      <template v-if="entry?.is_locked">
+                        <span class="font-medium text-sm">{{ line.work_item_name }}</span>
+                      </template>
+                      <SearchSelect v-else
+                        :modelValue="line.work_item_id"
+                        @update:modelValue="(val: string) => onWorkItemSelect(line._idx, val)"
+                        :options="workItemOptions"
+                        placeholder="Chọn hạng mục..."
+                        showAdd
+                        @add-new="openAddWorkItem"
+                      />
+                    </td>
+                    <td class="px-2 py-1.5 text-center text-gray-500 text-xs">{{ line.unit }}</td>
+                    <td class="px-2 py-1.5 text-center text-gray-400 text-xs">{{ line.design_quantity ?? '—' }}</td>
+                    <td v-if="showLeftRight" class="px-2 py-1.5 text-center">
+                      <template v-if="entry?.is_locked">{{ line.side || '—' }}</template>
+                      <select v-else v-model="line.side" class="input-xs w-14">
+                        <option :value="null">—</option>
+                        <option value="T">T</option>
+                        <option value="P">P</option>
+                      </select>
+                    </td>
+                    <td class="px-2 py-1.5 text-center">
+                      <template v-if="entry?.is_locked">{{ line.batch_number }}</template>
+                      <input v-else v-model.number="line.batch_number" type="number" min="1"
+                        class="input-xs w-14 text-center" />
+                    </td>
+                    <td class="px-2 py-1.5 text-center">
+                      <template v-if="entry?.is_locked">
+                        <span class="font-semibold">{{ line.quantity }}</span>
+                      </template>
+                      <input v-else v-model.number="line.quantity" type="number" min="0" step="0.01"
+                        class="input-xs w-24 text-right" />
+                    </td>
+                    <td class="px-2 py-1.5">
+                      <template v-if="entry?.is_locked">{{ line.notes || '' }}</template>
+                      <input v-else v-model="line.notes" class="input-xs w-full" placeholder="..." />
+                    </td>
+                    <td v-if="!entry?.is_locked" class="px-2 py-1.5 text-center">
+                      <button @click="removeLine(line._idx)"
+                        class="text-red-400 hover:text-red-600 text-xs">✕</button>
+                    </td>
+                  </tr>
+                </template>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Weather / Notes -->
+        <div v-if="entry" class="bg-white rounded-lg border p-4 mt-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Thời tiết</label>
+              <select v-model="entryMeta.weather" :disabled="entry.is_locked" class="input-field w-full text-sm">
+                <option value="">-- Chọn --</option>
+                <option>Nắng</option>
+                <option>Mưa</option>
+                <option>Nhiều mây</option>
+                <option>Nắng gián đoạn mưa</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Ghi chú chung</label>
+              <textarea v-model="entryMeta.notes" :disabled="entry.is_locked"
+                class="input-field w-full h-16 text-sm" placeholder="Ghi chú..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-3 mt-3">
+          <template v-if="entry && !entry.is_locked">
+            <button @click="saveAll" :disabled="saving"
+              class="btn-primary">
+              {{ saving ? 'Đang lưu...' : 'Lưu nháp' }}
+            </button>
+            <button @click="saveAndLock" :disabled="saving"
+              class="btn-success">
+              Lưu & Khóa
+            </button>
+          </template>
+          <template v-else-if="!entry">
+            <button @click="startEntry" :disabled="loadingEntry"
+              class="btn-primary">
+              {{ loadingEntry ? 'Đang tạo...' : 'Bắt đầu ghi' }}
+            </button>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- Modal thêm hạng mục mới -->
+    <div v-if="showAddModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+      @click.self="showAddModal = false">
+      <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+        <h3 class="font-semibold text-gray-800 mb-4">Thêm hạng mục mới</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">Nhóm</label>
+            <input v-model="newWI.group_name" class="input-field w-full" placeholder="VD: Kết cấu phần dưới" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">Tên hạng mục <span class="text-red-500">*</span></label>
+            <input v-model="newWI.name" class="input-field w-full" placeholder="VD: Móng cọc khoan nhồi" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">Đơn vị</label>
+              <input v-model="newWI.unit" class="input-field w-full" placeholder="VD: cọc, m3" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">KL thiết kế</label>
+              <input v-model.number="newWI.design_quantity" type="number" step="0.01"
+                class="input-field w-full" placeholder="0" />
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-5">
+          <button @click="showAddModal = false"
+            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
+            Hủy
+          </button>
+          <button @click="saveNewWorkItem" :disabled="!newWI.name"
+            class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-40 text-sm font-medium">
+            Lưu
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+definePageMeta({ middleware: 'auth' })
+
+const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem } = useStructures()
+const { getOrCreateEntry, saveLine, deleteLine, updateEntry, lockEntry } = useDiary()
+const { currentProject } = useProject()
+const { success, error: showError } = useToast()
+
+// --- State ---
+const loading = ref(true)
+const loadingEntry = ref(false)
+const saving = ref(false)
+const selectedDate = ref(new Date().toISOString().slice(0, 10))
+
+// Data
+const types = ref<any[]>([])
+const allStructures = ref<any[]>([])
+
+// Navigation
+const activeTab = ref(0)
+const activeChip = ref(0)
+
+// Entry
+const entry = ref<any>(null)
+const formLines = ref<any[]>([])
+const entryMeta = reactive({ weather: '', notes: '' })
+const allWorkItems = ref<any[]>([])
+
+// Group collapse state
+const collapsedGroups = ref<Record<string, boolean>>({})
+
+// Modal thêm hạng mục mới
+const showAddModal = ref(false)
+const newWI = reactive({ name: '', group_name: '', unit: '', design_quantity: null as number | null })
+
+// Track entries per structure for badges
+const entryStatusMap = ref<Record<string, 'draft' | 'locked'>>({})
+
+// --- Computed ---
+
+// Structures for the active tab
+const currentStructures = computed(() => {
+  const type = types.value[activeTab.value]
+  if (!type) return []
+  return allStructures.value.filter(s => s.type_id === type.id)
+})
+
+// Currently selected structure
+const currentStructure = computed(() => {
+  return currentStructures.value[activeChip.value] || null
+})
+
+// T/P
+const showLeftRight = computed(() => currentProject.value?.has_left_right ?? false)
+
+// Column span for group header
+const colSpan = computed(() => {
+  let cols = 7 // base columns
+  if (showLeftRight.value) cols++
+  if (!entry.value?.is_locked) cols++ // delete button column
+  return cols
+})
+
+// Work item options for SearchSelect
+const workItemOptions = computed(() =>
+  allWorkItems.value.map(wi => ({
+    value: wi.id,
+    label: wi.group_name ? `${wi.group_name} — ${wi.name}` : wi.name,
+  }))
+)
+
+// Grouped lines for display
+const groupedLines = computed(() => {
+  const groups: { name: string; lines: any[] }[] = []
+  const groupMap = new Map<string, any[]>()
+  const ungrouped: any[] = []
+
+  for (const line of formLines.value) {
+    const gn = line.group_name || ''
+    if (gn) {
+      if (!groupMap.has(gn)) {
+        groupMap.set(gn, [])
+        groups.push({ name: gn, lines: groupMap.get(gn)! })
+      }
+      groupMap.get(gn)!.push(line)
+    } else {
+      ungrouped.push(line)
+    }
+  }
+
+  // Ungrouped lines go first (usually the empty new row)
+  if (ungrouped.length) {
+    groups.push({ name: '', lines: ungrouped })
+  }
+
+  return groups
+})
+
+// --- Methods ---
+
+function selectTab(idx: number) {
+  if (activeTab.value === idx) return
+  activeTab.value = idx
+  activeChip.value = 0
+  // Reset entry state
+  entry.value = null
+  formLines.value = []
+  allWorkItems.value = []
+  collapsedGroups.value = {}
+  // Auto-load if structures exist
+  if (currentStructures.value.length) {
+    loadStructureEntry()
+  }
+}
+
+function selectChip(idx: number) {
+  if (activeChip.value === idx) return
+  activeChip.value = idx
+  entry.value = null
+  formLines.value = []
+  allWorkItems.value = []
+  collapsedGroups.value = {}
+  loadStructureEntry()
+}
+
+function onDateChange() {
+  if (currentStructure.value) {
+    entry.value = null
+    formLines.value = []
+    loadStructureEntry()
+  }
+}
+
+function toggleGroup(name: string) {
+  collapsedGroups.value[name] = !collapsedGroups.value[name]
+}
+
+function getEntryCountForType(typeId: string) {
+  const structs = allStructures.value.filter(s => s.type_id === typeId)
+  let count = 0
+  for (const s of structs) {
+    if (entryStatusMap.value[s.id]) count++
+  }
+  return count
+}
+
+function getEntryStatus(structureId: string): string {
+  return entryStatusMap.value[structureId] || ''
+}
+
+// Load entry for current structure + date
+async function loadStructureEntry() {
+  const struct = currentStructure.value
+  if (!struct) return
+
+  loadingEntry.value = true
+  try {
+    // Load work items
+    allWorkItems.value = await getWorkItems(struct.id)
+
+    // Check if entry exists for this structure + date
+    const { $supabase } = useNuxtApp()
+    const { data: existing } = await $supabase
+      .from('diary_entries')
+      .select('*')
+      .eq('structure_id', struct.id)
+      .eq('entry_date', selectedDate.value)
+      .maybeSingle()
+
+    if (existing) {
+      entry.value = existing
+      entryMeta.weather = existing.weather || ''
+      entryMeta.notes = existing.notes || ''
+      entryStatusMap.value[struct.id] = existing.is_locked ? 'locked' : 'draft'
+
+      // Load existing lines
+      const { data: existingLines } = await $supabase
+        .from('diary_lines')
+        .select('*, work_items(name, unit, design_quantity, group_name)')
+        .eq('entry_id', existing.id)
+        .order('created_at')
+
+      formLines.value = (existingLines || []).map((line: any, i: number) => ({
+        _idx: i,
+        id: line.id,
+        work_item_id: line.work_item_id,
+        work_item_name: line.work_items?.name || '?',
+        unit: line.work_items?.unit || '?',
+        design_quantity: line.work_items?.design_quantity,
+        group_name: line.work_items?.group_name || '',
+        side: line.side,
+        batch_number: line.batch_number,
+        quantity: line.quantity,
+        notes: line.notes || '',
+      }))
+
+      if (!existing.is_locked) ensureEmptyRow()
+    } else {
+      // No entry yet — show empty state
+      entry.value = null
+      formLines.value = []
+      entryMeta.weather = ''
+      entryMeta.notes = ''
+    }
+  } catch (e: any) {
+    showError(e.message)
+  } finally {
+    loadingEntry.value = false
+  }
+}
+
+async function startEntry() {
+  const struct = currentStructure.value
+  if (!struct) return
+
+  loadingEntry.value = true
+  try {
+    entry.value = await getOrCreateEntry(struct.id, selectedDate.value)
+    entryMeta.weather = entry.value.weather || ''
+    entryMeta.notes = entry.value.notes || ''
+    entryStatusMap.value[struct.id] = 'draft'
+
+    // Load work items if not loaded yet
+    if (!allWorkItems.value.length) {
+      allWorkItems.value = await getWorkItems(struct.id)
+    }
+
+    formLines.value = []
+    ensureEmptyRow()
+    success('Đã tạo nhật ký mới')
+  } catch (e: any) {
+    showError(e.message)
+  } finally {
+    loadingEntry.value = false
+  }
+}
+
+function ensureEmptyRow() {
+  const hasEmpty = formLines.value.some(l => !l.work_item_id)
+  if (!hasEmpty) {
+    const idx = formLines.value.length
+    formLines.value.push({
+      _idx: idx,
+      id: null,
+      work_item_id: '',
+      work_item_name: '',
+      unit: '',
+      design_quantity: null,
+      group_name: '',
+      side: null,
+      batch_number: 1,
+      quantity: 0,
+      notes: '',
+    })
+  }
+}
+
+function reindexLines() {
+  formLines.value.forEach((l, i) => { l._idx = i })
+}
+
+function onWorkItemSelect(idx: number, workItemId: string) {
+  const line = formLines.value[idx]
+  line.work_item_id = workItemId
+  const wi = allWorkItems.value.find(w => w.id === workItemId)
+  if (wi) {
+    line.work_item_name = wi.name
+    line.unit = wi.unit
+    line.design_quantity = wi.design_quantity
+    line.group_name = wi.group_name || ''
+  }
+  ensureEmptyRow()
+  reindexLines()
+}
+
+async function removeLine(idx: number) {
+  const line = formLines.value[idx]
+  if (line.id) {
+    await deleteLine(line.id)
+  }
+  formLines.value.splice(idx, 1)
+  reindexLines()
+}
+
+function openAddWorkItem() {
+  Object.assign(newWI, { name: '', group_name: '', unit: '', design_quantity: null })
+  showAddModal.value = true
+}
+
+async function saveNewWorkItem() {
+  if (!newWI.name || !currentStructure.value) return
+  try {
+    const created = await createWorkItem({
+      structure_id: currentStructure.value.id,
+      name: newWI.name,
+      group_name: newWI.group_name || null,
+      unit: newWI.unit || null,
+      design_quantity: newWI.design_quantity || null,
+    })
+    allWorkItems.value.push(created)
+    showAddModal.value = false
+    success('Đã thêm hạng mục: ' + created.name)
+  } catch (e: any) {
+    showError(e.message)
+  }
+}
+
+async function saveAll() {
+  if (!entry.value) return
+  saving.value = true
+  try {
+    await updateEntry(entry.value.id, {
+      weather: entryMeta.weather || null,
+      notes: entryMeta.notes || null,
+    })
+
+    for (const line of formLines.value) {
+      if (!line.work_item_id) continue
+      if (line.quantity > 0 || line.id) {
+        const saved = await saveLine({
+          id: line.id || undefined,
+          entry_id: entry.value.id,
+          work_item_id: line.work_item_id,
+          side: line.side || null,
+          batch_number: line.batch_number || 1,
+          quantity: line.quantity || 0,
+          notes: line.notes || null,
+        })
+        line.id = saved.id
+      }
+    }
+    success('Đã lưu nhật ký')
+  } catch (e: any) {
+    showError(e.message)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveAndLock() {
+  await saveAll()
+  if (!saving.value && entry.value) {
+    try {
+      await lockEntry(entry.value.id)
+      entry.value.is_locked = true
+      entryStatusMap.value[currentStructure.value!.id] = 'locked'
+      success('Đã khóa nhật ký')
+    } catch (e: any) {
+      showError(e.message)
+    }
+  }
+}
+
+// Load entries status for all structures of today
+async function loadTodayStatus() {
+  try {
+    const { $supabase } = useNuxtApp()
+    const structIds = allStructures.value.map(s => s.id)
+    if (!structIds.length) return
+
+    const { data } = await $supabase
+      .from('diary_entries')
+      .select('structure_id, is_locked')
+      .eq('entry_date', selectedDate.value)
+      .in('structure_id', structIds)
+
+    const map: Record<string, 'draft' | 'locked'> = {}
+    for (const row of data || []) {
+      map[row.structure_id] = row.is_locked ? 'locked' : 'draft'
+    }
+    entryStatusMap.value = map
+  } catch { /* ignore */ }
+}
+
+// --- Init ---
+onMounted(async () => {
+  try {
+    const [t, s] = await Promise.all([getTypes(), getStructures()])
+    types.value = t
+    allStructures.value = s
+
+    // Load status badges
+    await loadTodayStatus()
+
+    // Auto-select first structure if available
+    if (currentStructures.value.length) {
+      loadStructureEntry()
+    }
+  } catch (e: any) {
+    showError(e.message)
+  } finally {
+    loading.value = false
+  }
+})
+</script>
+
+<style scoped>
+.input-field {
+  @apply px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500;
+}
+.input-xs {
+  @apply px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500;
+}
+
+/* Tabs strip */
+.tabs-strip {
+  @apply flex gap-1 overflow-x-auto pb-1 border-b border-gray-200;
+  scrollbar-width: thin;
+}
+.tab-btn {
+  @apply flex-shrink-0 px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 border-transparent
+    text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors relative;
+}
+.tab-btn.active {
+  @apply bg-white text-primary-700 border-gray-200 font-semibold;
+  margin-bottom: -1px;
+  border-bottom: 2px solid white;
+}
+.tab-badge {
+  @apply ml-1.5 inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-primary-100 text-primary-700;
+}
+
+/* Chips strip */
+.chips-strip {
+  @apply flex gap-2 overflow-x-auto py-3 px-1;
+  scrollbar-width: thin;
+}
+.chip-btn {
+  @apply flex-shrink-0 px-3 py-1.5 text-sm rounded-full border border-gray-300
+    text-gray-600 hover:border-primary-400 hover:text-primary-600 transition-colors
+    flex items-center gap-1.5;
+}
+.chip-btn.active {
+  @apply bg-primary-600 text-white border-primary-600;
+}
+.chip-dot {
+  @apply w-2 h-2 rounded-full;
+}
+.chip-dot.draft {
+  @apply bg-yellow-400;
+}
+.chip-dot.locked {
+  @apply bg-green-500;
+}
+
+/* Structure header */
+.structure-header {
+  @apply flex justify-between items-center bg-white border rounded-t-lg px-4 py-3 sticky top-0 z-10;
+}
+
+/* Status badges */
+.status-badge {
+  @apply px-2.5 py-0.5 text-xs font-medium rounded-full;
+}
+.status-badge.draft {
+  @apply bg-yellow-100 text-yellow-700;
+}
+.status-badge.locked {
+  @apply bg-gray-100 text-gray-600;
+}
+.status-badge.new {
+  @apply bg-blue-100 text-blue-600;
+}
+
+/* Table card */
+.table-card {
+  @apply bg-white border border-t-0 rounded-b-lg overflow-x-auto;
+}
+
+/* Table header */
+.tbl-hdr {
+  @apply bg-gray-50 text-gray-600 text-xs uppercase tracking-wide;
+}
+
+/* Group header row */
+.tbl-group {
+  @apply bg-indigo-50 cursor-pointer hover:bg-indigo-100 transition-colors;
+}
+
+/* Data row */
+.tbl-row {
+  @apply border-t border-gray-100 hover:bg-gray-50;
+}
+
+/* Buttons */
+.btn-primary {
+  @apply px-5 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm font-medium;
+}
+.btn-success {
+  @apply px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium;
+}
+</style>
