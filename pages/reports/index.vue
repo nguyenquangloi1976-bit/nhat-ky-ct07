@@ -132,7 +132,12 @@
                 <span v-if="row.layer_info" class="text-xs text-gray-400 ml-1">({{ row.layer_info }})</span>
               </td>
               <td class="px-3 py-2 text-center text-gray-500">{{ row.unit }}</td>
-              <td class="px-3 py-2 text-right text-gray-400">{{ formatNum(row.design_quantity) }}</td>
+              <td class="px-3 py-2 text-right">
+                <span class="text-gray-400">{{ formatNum(row.design_quantity) }}</span>
+                <div v-if="row.dtpl_km_range" class="text-[10px] text-gray-400 leading-tight mt-0.5">
+                  ĐTPL: {{ row.dtpl_km_range }}
+                </div>
+              </td>
               <td class="px-3 py-2 text-right font-medium"
                 :class="row.total_quantity > 0 ? 'text-primary-700' : 'text-gray-400'">
                 {{ formatNum(row.total_quantity) }}
@@ -436,6 +441,24 @@ async function loadReport() {
     }
     const allRows = [...nonPileRows, ...mergedPiles]
 
+    // 6. Bổ sung KL thiết kế từ ĐTPL cho các hạng mục đường chưa có design_quantity
+    const dtplCache = new Map<string, { quantity: number; kmFrom: number; kmTo: number } | null>()
+    for (const row of allRows) {
+      if (row.design_quantity && row.design_quantity > 0) continue // đã có KL thiết kế
+      const detected = _detectItemType(row.work_item_name)
+      if (!detected) continue
+
+      let dtplResult = dtplCache.get(detected.itemType)
+      if (dtplResult === undefined) {
+        dtplResult = await _calcDesignFromDTPL(detected.itemType, detected.unit)
+        dtplCache.set(detected.itemType, dtplResult)
+      }
+      if (dtplResult && dtplResult.quantity > 0) {
+        row.design_quantity = dtplResult.quantity
+        row.dtpl_km_range = _fmtKmRange(dtplResult.kmFrom, dtplResult.kmTo)
+      }
+    }
+
     // Sort: type → structure → sortOrder (tổng cầu cuối cùng) → group → item
     allRows.sort((a, b) =>
       a.type_name.localeCompare(b.type_name)
@@ -507,6 +530,63 @@ function _detectItemType(name: string): { itemType: string; label: string; unit:
     if (m.pattern.test(name)) return { itemType: m.itemType, label: m.label, unit: m.unit }
   }
   return null
+}
+
+/**
+ * Tính tổng KL thiết kế từ ĐTPL cho 1 item_type (tất cả lớp, cả 2 bên T/P).
+ */
+async function _calcDesignFromDTPL(itemType: string, unit: 'm3' | 'm2'): Promise<{ quantity: number; kmFrom: number; kmTo: number } | null> {
+  const pid = currentProject.value?.id
+  if (!pid) return null
+
+  const { data, error: err } = await $supabase
+    .from('layer_sections')
+    .select('station, layer, side, area')
+    .eq('project_id', pid)
+    .eq('item_type', itemType)
+    .order('side')
+    .order('layer')
+    .order('station')
+
+  if (err || !data || data.length === 0) return null
+
+  let minSt = Infinity, maxSt = -Infinity
+  for (const r of data) {
+    if (r.station < minSt) minSt = r.station
+    if (r.station > maxSt) maxSt = r.station
+  }
+
+  // Group by (side, layer) → tính volume/area cho mỗi nhóm
+  const groups = new Map<string, { station: number; area: number }[]>()
+  for (const r of data) {
+    const key = `${r.side}|${r.layer}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push({ station: r.station, area: r.area })
+  }
+
+  let total = 0
+  for (const [, sections] of groups) {
+    sections.sort((a, b) => a.station - b.station)
+    for (let i = 0; i < sections.length - 1; i++) {
+      const L = sections[i + 1].station - sections[i].station
+      total += ((sections[i].area + sections[i + 1].area) / 2) * L
+    }
+  }
+
+  return {
+    quantity: Math.round(total * 100) / 100,
+    kmFrom: minSt,
+    kmTo: maxSt,
+  }
+}
+
+function _fmtKmRange(kmFrom: number, kmTo: number): string {
+  const f = (m: number) => {
+    const km = Math.floor(m / 1000)
+    const remain = Math.round(m % 1000)
+    return `Km${km}+${String(remain).padStart(3, '0')}`
+  }
+  return `${f(kmFrom)}–${f(kmTo)}`
 }
 
 function _parseKm(input: string | number | null | undefined): number | null {
@@ -583,13 +663,18 @@ async function recalcVolumes() {
       if (kmFrom === kmTo) { stats[detected.label].skipped++; totalSkipped++; continue }
 
       try {
-        const result = await calcVolume({
+        const calcParams = {
           side: line.side as 'T' | 'P',
           layer: Number(line.batch_number),
           kmFrom,
           kmTo,
           itemType: detected.itemType,
-        })
+        }
+        // m² (BTN) → calcArea, m³ (K95…) → calcVolume
+        const quantity = detected.unit === 'm2'
+          ? (await calcArea(calcParams)).area
+          : (await calcVolume(calcParams)).volume
+        const result = { volume: quantity }
 
         if (result.volume > 0 && Math.abs(result.volume - (line.quantity || 0)) > 0.01) {
           const { error: uErr } = await $supabase
