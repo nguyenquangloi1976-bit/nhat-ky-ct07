@@ -66,7 +66,11 @@
           </div>
           <!-- Right: User info -->
           <div class="flex items-center space-x-3">
-            <span class="text-sm text-gray-600">{{ userName }}</span>
+            <button @click="showPwdModal = true"
+              class="text-sm text-gray-600 hover:text-primary-700 cursor-pointer underline-offset-2 hover:underline"
+              title="Đổi mật khẩu">
+              {{ userName }}
+            </button>
             <span v-if="isAdmin" class="px-2 py-0.5 text-xs bg-primary-100 text-primary-700 rounded-full">Admin</span>
             <button @click="logout" class="text-sm text-gray-500 hover:text-red-600">
               Đăng xuất
@@ -81,13 +85,46 @@
       <slot />
     </main>
 
+    <!-- Modal Đổi mật khẩu -->
+    <div v-if="showPwdModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      @click.self="closePwdModal">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
+        <div class="p-5 border-b">
+          <h2 class="text-lg font-semibold text-gray-800">Đổi mật khẩu</h2>
+        </div>
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Mật khẩu mới</label>
+            <input v-model="newPassword" type="password" class="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Xác nhận mật khẩu</label>
+            <input v-model="confirmPassword" type="password" class="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="Nhập lại mật khẩu mới" @keyup.enter="submitChangePassword" />
+          </div>
+          <p v-if="pwdError" class="text-sm text-red-600">{{ pwdError }}</p>
+          <p v-if="pwdSuccess" class="text-sm text-green-600">{{ pwdSuccess }}</p>
+        </div>
+        <div class="p-5 border-t flex justify-end space-x-3">
+          <button @click="closePwdModal" class="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-50">
+            Đóng
+          </button>
+          <button @click="submitChangePassword" :disabled="pwdLoading"
+            class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
+            {{ pwdLoading ? 'Đang xử lý...' : 'Đổi mật khẩu' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast -->
     <ToastNotification />
   </div>
 </template>
 
 <script setup lang="ts">
-const { profile, signOut } = useAuth()
+const { profile, signOut, changePassword } = useAuth()
 const { projects, currentProject, selectProject } = useProject()
 
 const userName = computed(() => profile.value?.full_name || 'User')
@@ -95,6 +132,49 @@ const isAdmin = computed(() => profile.value?.role === 'admin')
 
 const showDropdown = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+
+// --- Đổi mật khẩu ---
+const showPwdModal = ref(false)
+const newPassword = ref('')
+const confirmPassword = ref('')
+const pwdError = ref('')
+const pwdSuccess = ref('')
+const pwdLoading = ref(false)
+
+function closePwdModal() {
+  showPwdModal.value = false
+  newPassword.value = ''
+  confirmPassword.value = ''
+  pwdError.value = ''
+  pwdSuccess.value = ''
+}
+
+async function submitChangePassword() {
+  pwdError.value = ''
+  pwdSuccess.value = ''
+
+  if (!newPassword.value || newPassword.value.length < 6) {
+    pwdError.value = 'Mật khẩu mới phải có ít nhất 6 ký tự'
+    return
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    pwdError.value = 'Mật khẩu xác nhận không khớp'
+    return
+  }
+
+  pwdLoading.value = true
+  try {
+    await changePassword(newPassword.value)
+    pwdSuccess.value = 'Đổi mật khẩu thành công!'
+    newPassword.value = ''
+    confirmPassword.value = ''
+    setTimeout(() => closePwdModal(), 1500)
+  } catch (e: any) {
+    pwdError.value = e.message || 'Đổi mật khẩu thất bại'
+  } finally {
+    pwdLoading.value = false
+  }
+}
 
 function switchProject(p: any) {
   selectProject(p)

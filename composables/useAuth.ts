@@ -4,7 +4,6 @@ interface Profile {
   id: string
   full_name: string | null
   role: 'admin' | 'engineer'
-  title?: string | null
 }
 
 const user = ref<User | null>(null)
@@ -54,14 +53,19 @@ export function useAuth() {
     profile.value = null
   }
 
+  async function changePassword(newPassword: string) {
+    const { error } = await $supabase.auth.updateUser({ password: newPassword })
+    if (error) throw error
+  }
+
   return {
     user: readonly(user),
     profile: readonly(profile),
     loading: readonly(loading),
     isAdmin: computed(() => profile.value?.role === 'admin'),
-    isTVGSTruong: computed(() => profile.value?.title === 'TVGS trưởng'),
     init,
     signIn,
     signOut,
+    changePassword,
   }
 }
