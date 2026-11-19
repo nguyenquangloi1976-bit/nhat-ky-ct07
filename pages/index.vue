@@ -50,6 +50,22 @@
         </div>
       </NuxtLink>
     </div>
+      <NuxtLink to="/tai-lieu"
+        class="bg-white border rounded-lg p-6 hover:bg-gray-50 transition flex items-center space-x-4">
+        <span class="text-3xl text-gray-400">📋</span>
+        <div>
+          <p class="font-semibold text-lg text-gray-800">Tài liệu đệ trình</p>
+          <p class="text-gray-500 text-sm">Theo dõi hồ sơ theo NĐ 207</p>
+        </div>
+      </NuxtLink>
+      <NuxtLink to="/vat-lieu"
+        class="bg-white border rounded-lg p-6 hover:bg-gray-50 transition flex items-center space-x-4">
+        <span class="text-3xl text-gray-400">🏗️</span>
+        <div>
+          <p class="font-semibold text-lg text-gray-800">Nguồn vật liệu</p>
+          <p class="text-gray-500 text-sm">Quản lý nguồn vật liệu đầu vào</p>
+        </div>
+      </NuxtLink>
 
     <!-- Recent Entries -->
     <div class="bg-white rounded-lg shadow-sm border">

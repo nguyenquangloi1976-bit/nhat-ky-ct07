@@ -50,6 +50,12 @@
               <NuxtLink to="/cat-doc" class="nav-link" active-class="nav-active">
                 Cắt dọc
               </NuxtLink>
+              <NuxtLink to="/tai-lieu" class="nav-link" active-class="nav-active">
+                Tài liệu
+              </NuxtLink>
+              <NuxtLink to="/vat-lieu" class="nav-link" active-class="nav-active">
+                Vật liệu
+              </NuxtLink>
               <NuxtLink to="/reports" class="nav-link" active-class="nav-active">
                 Báo cáo
               </NuxtLink>
