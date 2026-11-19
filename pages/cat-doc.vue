@@ -227,6 +227,8 @@ const layerDefs = computed(() => {
 
 // Max layer count từ ĐTPL (layer_sections) cho mỗi item_type → tên hạng mục
 const dtplLayerCounts = ref<Record<string, number>>({})
+// Max layer per item_type+side, key = "item_type:side"
+const dtplLayerCountsBySide = ref<Record<string, number>>({})
 
 // Map item_type → regex khớp tên hạng mục (ngược lại ITEM_TYPE_MAP trong reports)
 const ITEM_TYPE_NAME_MAP: { itemType: string; pattern: RegExp }[] = [
@@ -253,25 +255,46 @@ function _itemTypeForName(name: string): string | null {
 async function loadDtplLayerCounts() {
   const pid = currentProject.value?.id
   if (!pid) return
-  // Query max layer per item_type from layer_sections
+  // Query max layer per item_type (+ side) from layer_sections
   const { data, error } = await $supabase
     .from('layer_sections')
-    .select('item_type, layer')
+    .select('item_type, layer, side')
     .eq('project_id', pid)
   if (error || !data) return
   const maxByType: Record<string, number> = {}
+  const maxByTypeSide: Record<string, number> = {}
   for (const row of data) {
     const t = row.item_type || 'K95'
     if (!maxByType[t] || row.layer > maxByType[t]) maxByType[t] = row.layer
+    // Lưu thêm theo side
+    if (row.side) {
+      const key = `${t}:${row.side}`
+      if (!maxByTypeSide[key] || row.layer > maxByTypeSide[key]) maxByTypeSide[key] = row.layer
+    }
   }
   dtplLayerCounts.value = maxByType
+  dtplLayerCountsBySide.value = maxByTypeSide
 }
 
-function liftCount(name: string) {
-  // Ưu tiên: user config > ĐTPL max layer > default 1
-  if (liftCfg.value[name] !== undefined) return liftCfg.value[name]
+function liftCount(name: string, side?: 'T' | 'P' | null) {
+  // cfg = 0 → user ẩn hạng mục này
+  const userCfg = liftCfg.value[name]
+  if (userCfg === 0) return 0
+
   const itemType = _itemTypeForName(name)
-  if (itemType && dtplLayerCounts.value[itemType]) return dtplLayerCounts.value[itemType]
+  let dtpl = 0
+  if (itemType) {
+    // Ưu tiên lấy max layer theo side, fallback global
+    if (side && dtplLayerCountsBySide.value[`${itemType}:${side}`]) {
+      dtpl = dtplLayerCountsBySide.value[`${itemType}:${side}`]
+    } else if (dtplLayerCounts.value[itemType]) {
+      dtpl = dtplLayerCounts.value[itemType]
+    }
+  }
+
+  // ĐTPL là nguồn chính, user config chỉ bổ sung (lấy max)
+  if (dtpl > 0) return userCfg !== undefined ? Math.max(dtpl, userCfg) : dtpl
+  if (userCfg !== undefined) return userCfg
   return 1
 }
 function setLiftCount(name: string, n: number) {
@@ -310,7 +333,7 @@ function buildRows(side: 'T' | 'P' | null) {
     const mine = stationLines.value.filter(l =>
       l.work_items?.name === def.name && (side === null || !l.side || l.side === side))
     const maxBatch = mine.reduce((m, l) => Math.max(m, Number(l.batch_number) || 0), 0)
-    const cfg = liftCount(def.name)
+    const cfg = liftCount(def.name, side)
     if (cfg === 0) continue
     const count = Math.max(cfg, cfg > 1 || maxBatch > 1 ? maxBatch : 1)
     // Lớp 1 = trên cùng (tiếp giáp móng mặt đường), lớp N = đáy (đắp đầu tiên)
