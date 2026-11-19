@@ -664,7 +664,7 @@ async function recalcVolumes() {
 
       try {
         // m² (BTN) → calcArea cho 1 lớp
-        // m³ (K95…) → calcCumulativeVolume: tổng từ lớp đáy đến lớp hiện tại
+        // m³ (K95…) → calcVolume: khối lượng riêng từng lớp
         let quantity: number
         if (detected.unit === 'm2') {
           quantity = (await calcArea({
@@ -675,13 +675,14 @@ async function recalcVolumes() {
             itemType: detected.itemType,
           })).area
         } else {
-          quantity = await calcCumulativeVolume({
+          const vol = await calcVolume({
             side: line.side as 'T' | 'P',
-            currentLayer: Number(line.batch_number),
+            layer: Number(line.batch_number),
             kmFrom,
             kmTo,
             itemType: detected.itemType,
           })
+          quantity = vol.volume
         }
         const result = { volume: quantity }
 

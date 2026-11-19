@@ -146,15 +146,18 @@
                     <!-- Lý trình (chỉ công trình theo tuyến) -->
                     <td v-if="isLinear" class="px-2 py-1.5 text-center">
                       <template v-if="entry?.is_locked">{{ row.line.km_from_text }}</template>
-                      <input v-else v-model="row.line.km_from_text" @blur="normalizeKm(row.line, 'km_from_text'); autoCalcK95(row)"
+                      <input v-else v-model="row.line.km_from_text" @blur="normalizeKm(row.line, 'km_from_text'); autoCalcK95(row); checkOverlap(row)"
                         :class="['input-xs w-24 text-center', kmInvalid(row.line.km_from_text) ? 'border-red-500 bg-red-50' : '']"
                         placeholder="Km60+100" />
                     </td>
                     <td v-if="isLinear" class="px-2 py-1.5 text-center">
                       <template v-if="entry?.is_locked">{{ row.line.km_to_text }}</template>
-                      <input v-else v-model="row.line.km_to_text" @blur="normalizeKm(row.line, 'km_to_text'); autoCalcK95(row)"
+                      <input v-else v-model="row.line.km_to_text" @blur="normalizeKm(row.line, 'km_to_text'); autoCalcK95(row); checkOverlap(row)"
                         :class="['input-xs w-24 text-center', kmInvalid(row.line.km_to_text) ? 'border-red-500 bg-red-50' : '']"
                         placeholder="Km60+300" />
+                      <div v-if="row.line._overlapWarning" class="text-xs text-red-500 mt-0.5 whitespace-nowrap">
+                        ⚠️ {{ row.line._overlapWarning }}
+                      </div>
                     </td>
                     <!-- Khối lượng -->
                     <td class="px-2 py-1.5 text-center relative">
@@ -844,21 +847,83 @@ async function autoCalcK95(row: any) {
   _calcTimers.set(key, setTimeout(async () => {
     _calcTimers.delete(key)
     try {
-      const quantity = await calcCumulativeVolume({
+      const result = await calcVolume({
         side: line.side as 'T' | 'P',
-        currentLayer: Number(line.batch_number),
+        layer: Number(line.batch_number),
         kmFrom: Math.min(kmFrom, kmTo),
         kmTo: Math.max(kmFrom, kmTo),
       })
-      if (quantity > 0) {
-        line.quantity = quantity
+      if (result.volume > 0) {
+        line.quantity = result.volume
         line._autoCalc = true
-        line._autoCalcFormula = `Tổng lớp ${Number(line.batch_number)}→đáy`
+        line._autoCalcFormula = result.formula
       }
     } catch (e) {
       console.warn('Auto-calc K95 failed:', e)
     }
   }, 400))
+}
+
+
+// --- Overlap detection ---
+async function checkOverlap(row: any) {
+  const item = row.item || findItemForLine(row.line)
+  if (!item) return
+  const line = row.line
+
+  const kmFrom = parseKm(line.km_from_text)
+  const kmTo = parseKm(line.km_to_text)
+  if (kmFrom === null || kmTo === null || kmFrom === kmTo) {
+    line._overlapWarning = ''
+    return
+  }
+  const lo = Math.min(kmFrom, kmTo)
+  const hi = Math.max(kmFrom, kmTo)
+
+  // Query existing lines for same work_item, same side, same batch
+  try {
+    let query = $supabase
+      .from('diary_lines')
+      .select('id, km_from, km_to, batch_number, diary_entries!inner(entry_date, structure_id)')
+      .eq('work_item_id', line.work_item_id)
+      .not('km_from', 'is', null)
+
+    if (currentProject.value) {
+      query = query.eq('diary_entries.project_id', currentProject.value.id)
+    }
+    if (line.side) query = query.eq('side', line.side)
+    if (line.batch_number) query = query.eq('batch_number', line.batch_number)
+    // Exclude self
+    if (line.id) query = query.neq('id', line.id)
+
+    const { data: existing } = await query
+    if (!existing || existing.length === 0) {
+      line._overlapWarning = ''
+      return
+    }
+
+    // Check overlap
+    const overlaps: string[] = []
+    for (const ex of existing) {
+      const exLo = Math.min(Number(ex.km_from), Number(ex.km_to))
+      const exHi = Math.max(Number(ex.km_from), Number(ex.km_to))
+      if (exLo < hi && exHi > lo) {
+        // Overlap detected
+        const overlapStart = Math.max(lo, exLo)
+        const overlapEnd = Math.min(hi, exHi)
+        const date = ex.diary_entries?.entry_date || '?'
+        overlaps.push(`${formatKm(overlapStart)}→${formatKm(overlapEnd)} (${date})`)
+      }
+    }
+
+    if (overlaps.length > 0) {
+      line._overlapWarning = `Trùng lý trình: ${overlaps.join('; ')}`
+    } else {
+      line._overlapWarning = ''
+    }
+  } catch (e) {
+    console.warn('Overlap check failed:', e)
+  }
 }
 
 // Suggestions for search dropdown
