@@ -11,6 +11,7 @@ export interface MaterialSource {
   has_cert_compliance: boolean
   has_test_result: boolean
   has_mining_permit: boolean
+  file_url: string | null
   approved_date: string | null
   notes: string | null
   created_by: string | null

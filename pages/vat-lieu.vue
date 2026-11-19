@@ -86,6 +86,12 @@
                 </span>
               </div>
 
+              <div v-if="src.file_url" class="mt-2">
+                <a :href="src.file_url" target="_blank" rel="noopener"
+                  class="text-xs text-blue-600 hover:underline inline-flex items-center space-x-1">
+                  <span>📎</span><span>Xem hồ sơ</span>
+                </a>
+              </div>
               <p v-if="src.notes" class="text-xs text-gray-400 mt-2">{{ src.notes }}</p>
             </div>
             <div class="flex items-center space-x-2 ml-3 flex-shrink-0">
@@ -136,6 +142,13 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Ngày được chấp thuận</label>
             <input v-model="form.approved_date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+
+          <!-- Link tài liệu -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Link hồ sơ (Google Drive)</label>
+            <input v-model="form.file_url" type="url" class="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="https://drive.google.com/..." />
           </div>
 
           <!-- Hồ sơ chất lượng -->
@@ -208,6 +221,7 @@ const defaultForm = () => ({
   has_cert_compliance: false,
   has_test_result: false,
   has_mining_permit: false,
+  file_url: '',
   notes: '',
 })
 
@@ -227,6 +241,7 @@ function editSource(src: any) {
     has_cert_compliance: src.has_cert_compliance,
     has_test_result: src.has_test_result,
     has_mining_permit: src.has_mining_permit,
+    file_url: src.file_url || '',
     notes: src.notes || '',
   }
 }
@@ -251,6 +266,7 @@ async function saveSrc() {
       has_cert_compliance: form.value.has_cert_compliance,
       has_test_result: form.value.has_test_result,
       has_mining_permit: form.value.has_mining_permit,
+      file_url: form.value.file_url || null,
       notes: form.value.notes || null,
     }
     if (editingSrc.value) {
