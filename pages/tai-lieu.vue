@@ -32,7 +32,14 @@
     </div>
 
     <!-- Filter -->
-    <div class="flex items-center space-x-3 mb-4">
+    <div class="flex items-center flex-wrap gap-3 mb-4">
+      <div class="relative flex-1 min-w-[200px]">
+        <input v-model="searchQuery" type="text" placeholder="Tìm kiếm tài liệu..."
+          class="w-full border rounded-lg pl-9 pr-3 py-1.5 text-sm" />
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+      </div>
       <select v-model="filterStatus" class="border rounded-lg px-3 py-1.5 text-sm">
         <option value="">Tất cả trạng thái</option>
         <option v-for="(label, code) in STATUS_LABELS" :key="code" :value="code">{{ label }}</option>
@@ -189,6 +196,7 @@ const showModal = ref(false)
 const editingDoc = ref<any>(null)
 const filterStatus = ref('')
 const filterGroup = ref('')
+const searchQuery = ref('')
 
 // Danh mục gợi ý theo NĐ 207
 const SUGGESTIONS: Record<string, string[]> = {
@@ -238,6 +246,15 @@ const form = ref(defaultForm())
 
 const filtered = computed(() => {
   let list = docs.value
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(d =>
+      d.doc_name.toLowerCase().includes(q) ||
+      (d.doc_number && d.doc_number.toLowerCase().includes(q)) ||
+      (d.notes && d.notes.toLowerCase().includes(q)) ||
+      (d.reviewer_notes && d.reviewer_notes.toLowerCase().includes(q))
+    )
+  }
   if (filterStatus.value) list = list.filter(d => d.status === filterStatus.value)
   if (filterGroup.value) list = list.filter(d => d.group_code === filterGroup.value)
   return list
