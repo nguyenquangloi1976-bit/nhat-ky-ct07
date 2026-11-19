@@ -2,16 +2,8 @@ import crypto from 'crypto'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
-
-  const formData = await readMultipartFormData(event)
-  if (!formData || formData.length === 0) {
-    throw createError({ statusCode: 400, message: 'Không có file nào được gửi' })
-  }
-
-  const file = formData.find((f) => f.name === 'file')
-  if (!file || !file.data) {
-    throw createError({ statusCode: 400, message: 'Không tìm thấy file trong form data' })
-  }
+  const body = await readBody(event)
+  const { fileName, mimeType } = body
 
   const email = config.googleServiceAccountEmail as string
   const privateKey = (config.googlePrivateKey as string).replace(/\\n/g, '\n')
@@ -24,7 +16,7 @@ export default defineEventHandler(async (event) => {
   // 1. Tạo JWT
   const jwt = createJWT(email, privateKey)
 
-  // 2. Đổi JWT lấy access token
+  // 2. Lấy access token
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -38,49 +30,33 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 3. Upload lên Google Drive (multipart)
-  const fileName = file.filename || 'upload'
-  const mimeType = file.type || 'application/octet-stream'
-
-  const metadata = JSON.stringify({
-    name: fileName,
-    parents: [folderId],
-  })
-
-  const boundary = 'nktc_boundary_' + Date.now()
-  const metaPart = Buffer.from(
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`
-  )
-  const filePart = Buffer.from(`--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`)
-  const endPart = Buffer.from(`\r\n--${boundary}--`)
-
-  const body = Buffer.concat([metaPart, filePart, file.data, endPart])
-
-  const driveResp = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+  // 3. Khởi tạo resumable upload — trả về URL để client upload thẳng lên Google
+  const initResp = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
     {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': mimeType || 'application/octet-stream',
       },
-      body,
+      body: JSON.stringify({
+        name: fileName,
+        parents: [folderId],
+      }),
     }
   )
-  const driveData = (await driveResp.json()) as {
-    id?: string
-    webViewLink?: string
-    error?: { message: string }
+
+  const uploadUrl = initResp.headers.get('location')
+  if (!uploadUrl) {
+    const err = (await initResp.json()) as { error?: { message: string } }
+    throw createError({
+      statusCode: 500,
+      message: `Drive init lỗi: ${err.error?.message || 'unknown'}`,
+    })
   }
 
-  if (driveData.error) {
-    throw createError({ statusCode: 500, message: `Drive upload lỗi: ${driveData.error.message}` })
-  }
-
-  return {
-    id: driveData.id,
-    url: driveData.webViewLink,
-  }
+  return { uploadUrl }
 })
 
 function createJWT(email: string, privateKey: string): string {

@@ -7,15 +7,32 @@ export function useUploadDrive() {
     uploadError.value = ''
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const data = await $fetch<{ url: string }>('/api/upload-drive', {
+      // Bước 1: Lấy resumable upload URL từ server (request nhỏ, chỉ gửi metadata)
+      const { uploadUrl } = await $fetch<{ uploadUrl: string }>('/api/upload-drive', {
         method: 'POST',
-        body: formData,
+        body: { fileName: file.name, mimeType: file.type || 'application/octet-stream' },
       })
 
-      return data.url
+      // Bước 2: Upload file thẳng lên Google Drive (không qua Vercel, không giới hạn 4.5MB)
+      const uploadResp = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      })
+
+      if (!uploadResp.ok) {
+        const errText = await uploadResp.text()
+        throw new Error(`Upload thất bại (${uploadResp.status}): ${errText}`)
+      }
+
+      const data = (await uploadResp.json()) as { id?: string }
+      if (!data.id) {
+        throw new Error('Không nhận được file ID từ Google Drive')
+      }
+
+      return `https://drive.google.com/file/d/${data.id}/view`
     } catch (err: any) {
       uploadError.value = err.data?.message || err.message || 'Lỗi upload'
       return null
