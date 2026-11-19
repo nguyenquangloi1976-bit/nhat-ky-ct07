@@ -27,16 +27,27 @@
       </div>
     </div>
 
+    <!-- Search -->
+    <div class="mb-4">
+      <div class="relative">
+        <input v-model="searchQuery" type="text" placeholder="Tìm kiếm vật liệu..."
+          class="w-full border rounded-lg pl-9 pr-3 py-1.5 text-sm" />
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+      </div>
+    </div>
+
     <!-- Loading -->
     <div v-if="loading" class="text-center py-12 text-gray-400">Đang tải...</div>
 
     <!-- Material List -->
     <div v-else class="space-y-4">
-      <div v-if="sources.length === 0" class="bg-white rounded-lg shadow-sm border p-8 text-center text-gray-400">
+      <div v-if="filteredSources.length === 0" class="bg-white rounded-lg shadow-sm border p-8 text-center text-gray-400">
         Chưa có nguồn vật liệu nào
       </div>
 
-      <div v-for="src in sources" :key="src.id"
+      <div v-for="src in filteredSources" :key="src.id"
         class="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div class="p-4">
           <div class="flex items-start justify-between">
@@ -207,6 +218,18 @@ const {
 const { showToast } = useToast()
 
 const showAdd = ref(false)
+const searchQuery = ref('')
+
+const filteredSources = computed(() => {
+  if (!searchQuery.value) return sources.value
+  const q = searchQuery.value.toLowerCase()
+  return sources.value.filter(s =>
+    s.material_name.toLowerCase().includes(q) ||
+    (s.supplier && s.supplier.toLowerCase().includes(q)) ||
+    (s.supplier_address && s.supplier_address.toLowerCase().includes(q)) ||
+    (s.notes && s.notes.toLowerCase().includes(q))
+  )
+})
 const editingSrc = ref<any>(null)
 
 const defaultForm = () => ({
