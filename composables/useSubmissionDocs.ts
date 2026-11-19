@@ -8,6 +8,7 @@ export interface SubmissionDoc {
   submitted_date: string | null
   status: 'chua_nop' | 'da_nop' | 'dang_xem_xet' | 'chap_thuan' | 'yeu_cau_sua'
   approved_date: string | null
+  file_url: string | null
   reviewer_notes: string | null
   notes: string | null
   created_by: string | null
@@ -101,7 +102,7 @@ export function useSubmissionDocs() {
   const stats = computed(() => {
     const total = docs.value.length
     const approved = docs.value.filter(d => d.status === 'chap_thuan').length
-    const pending = docs.value.filter(d => d.status === 'chua_nop').length
+    const pending = docs.value.filter(d => d.status === 'dang_xem_xet' || d.status === 'da_nop').length
     const needFix = docs.value.filter(d => d.status === 'yeu_cau_sua').length
     return { total, approved, pending, needFix }
   })
