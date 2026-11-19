@@ -36,7 +36,11 @@ export function useLayerVolume() {
   const { currentProject } = useProject()
 
   /**
-   * Truy vấn các mặt cắt trong khoảng lý trình, cho 1 lớp + 1 bên.
+   * Truy vấn các mặt cắt trong khoảng lý trình.
+   * Lấy tất cả lớp từ `layer` đến lớp đáy (số lớn nhất), cộng diện tích theo station.
+   *
+   * Lý do: khi đắp đến lớp N, KL = tổng DT từ lớp đáy đến lớp N.
+   * Lớp 1 = trên cùng, lớp max = đáy → query layer >= params.layer
    */
   async function getSections(params: {
     side: 'T' | 'P'
@@ -53,7 +57,7 @@ export function useLayerVolume() {
       .select('station, layer, side, area, section_name')
       .eq('project_id', pid)
       .eq('side', params.side)
-      .eq('layer', params.layer)
+      .gte('layer', params.layer)  // lớp hiện tại đến lớp đáy
       .eq('item_type', params.itemType || 'K95')
       .gte('station', params.kmFrom)
       .lte('station', params.kmTo)
@@ -63,7 +67,30 @@ export function useLayerVolume() {
       console.error('getSections error:', error)
       return []
     }
-    return data || []
+    if (!data || data.length === 0) return []
+
+    // Gộp diện tích theo station: tổng DT tất cả lớp tại mỗi MC
+    const stationMap = new Map<number, { totalArea: number; section_name: string | null; count: number }>()
+    for (const r of data) {
+      const existing = stationMap.get(r.station)
+      if (existing) {
+        existing.totalArea += r.area
+        existing.count++
+      } else {
+        stationMap.set(r.station, { totalArea: r.area, section_name: r.section_name, count: 1 })
+      }
+    }
+
+    // Trả về 1 record per station với area = tổng DT các lớp
+    return Array.from(stationMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([station, info]) => ({
+        station,
+        layer: params.layer,
+        side: params.side,
+        area: Math.round(info.totalArea * 1000) / 1000,  // làm tròn 3 chữ số
+        section_name: info.section_name,
+      }))
   }
 
   /**
