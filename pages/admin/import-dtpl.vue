@@ -343,15 +343,26 @@ async function loadExistingSummary() {
   const pid = currentProject.value?.id
   if (!pid) return
 
-  const { data } = await $supabase
-    .from('layer_sections')
-    .select('item_type, side, km_range')
-    .eq('project_id', pid)
+  // Lấy tất cả dữ liệu (phân trang để vượt giới hạn 1000 dòng)
+  const allData: any[] = []
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data } = await $supabase
+      .from('layer_sections')
+      .select('item_type, side, km_range')
+      .eq('project_id', pid)
+      .range(from, from + pageSize - 1)
+    if (!data || data.length === 0) break
+    allData.push(...data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
 
-  if (!data) return
+  if (allData.length === 0) return
 
   const map = new Map<string, number>()
-  for (const r of data) {
+  for (const r of allData) {
     const key = `${r.item_type || 'K95'}|${r.side}|${r.km_range}`
     map.set(key, (map.get(key) || 0) + 1)
   }
