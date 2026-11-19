@@ -504,16 +504,22 @@ async function doImport() {
 
     const BATCH = 500
     let inserted = 0
-    const allRows = parsedRows.value.map(r => ({
-      project_id: pid,
-      station: r.station,
-      layer: r.layer,
-      side: r.side,
-      area: r.area,
-      section_name: r.section_name,
-      km_range: r.km_range,
-      item_type: r.item_type,
-    }))
+    // Loại trùng key (side+station+layer+item_type) — giữ dòng cuối
+    const dedupMap = new Map<string, any>()
+    for (const r of parsedRows.value) {
+      const key = `${r.side}|${r.station}|${r.layer}|${r.item_type}`
+      dedupMap.set(key, {
+        project_id: pid,
+        station: r.station,
+        layer: r.layer,
+        side: r.side,
+        area: r.area,
+        section_name: r.section_name,
+        km_range: r.km_range,
+        item_type: r.item_type,
+      })
+    }
+    const allRows = Array.from(dedupMap.values())
 
     for (let i = 0; i < allRows.length; i += BATCH) {
       const batch = allRows.slice(i, i + BATCH)
