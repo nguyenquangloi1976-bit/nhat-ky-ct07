@@ -174,7 +174,7 @@
               </div>
               <div class="mt-2">
                 <input v-model="manualUrl" type="url" class="w-full border rounded-lg px-3 py-2 text-sm"
-                  placeholder="Hoặc dán link Google Drive..." @change="if(manualUrl) form.file_url = manualUrl" />
+                  placeholder="Hoặc dán link Google Drive..." @change="manualUrl && (form.file_url = manualUrl)" />
               </div>
             </div>
             <div v-else class="flex items-center gap-2 mt-1 p-2 bg-green-50 rounded-lg border border-green-200">

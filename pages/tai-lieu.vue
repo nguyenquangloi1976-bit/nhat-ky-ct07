@@ -180,7 +180,7 @@
               <!-- Hoặc dán link -->
               <div class="mt-2">
                 <input v-model="manualUrl" type="url" class="w-full border rounded-lg px-3 py-2 text-sm"
-                  placeholder="Hoặc dán link Google Drive..." @change="if(manualUrl) form.file_url = manualUrl" />
+                  placeholder="Hoặc dán link Google Drive..." @change="manualUrl && (form.file_url = manualUrl)" />
               </div>
             </div>
             <!-- Hiện link đã có -->
