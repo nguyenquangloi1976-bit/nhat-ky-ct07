@@ -34,6 +34,7 @@
             <label class="block text-xs font-medium text-gray-600 mb-1">Vai trò</label>
             <select v-model="newUser.role" class="input-field">
               <option value="engineer">Kỹ sư</option>
+              <option value="tvgs_truong">TVGS trưởng</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -75,6 +76,7 @@
             <td class="px-4 py-3 text-center">
               <select v-model="u.role" @change="updateUser(u)" class="input-xs">
                 <option value="engineer">Kỹ sư</option>
+              <option value="tvgs_truong">TVGS trưởng</option>
                 <option value="admin">Admin</option>
               </select>
             </td>
@@ -112,7 +114,7 @@ const newUser = reactive({
   password: '',
   full_name: '',
   organization: '',
-  role: 'engineer' as 'engineer' | 'admin',
+  role: 'engineer' as 'engineer' | 'tvgs_truong' | 'admin',
 })
 
 async function createUser() {

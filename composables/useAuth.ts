@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js'
 interface Profile {
   id: string
   full_name: string | null
-  role: 'admin' | 'engineer'
+  role: 'admin' | 'tvgs_truong' | 'engineer'
 }
 
 const user = ref<User | null>(null)
@@ -62,7 +62,7 @@ export function useAuth() {
     user: readonly(user),
     profile: readonly(profile),
     loading: readonly(loading),
-    isAdmin: computed(() => profile.value?.role === 'admin'),
+    isAdmin: computed(() => profile.value?.role === 'admin' || profile.value?.role === 'tvgs_truong'),
     init,
     signIn,
     signOut,

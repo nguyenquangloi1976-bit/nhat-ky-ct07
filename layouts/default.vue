@@ -71,7 +71,7 @@
               title="Đổi mật khẩu">
               {{ userName }}
             </button>
-            <span v-if="isAdmin" class="px-2 py-0.5 text-xs bg-primary-100 text-primary-700 rounded-full">Admin</span>
+            <span v-if="isAdmin" class="px-2 py-0.5 text-xs bg-primary-100 text-primary-700 rounded-full">{{ roleBadge }}</span>
             <button @click="logout" class="text-sm text-gray-500 hover:text-red-600">
               Đăng xuất
             </button>
@@ -128,7 +128,12 @@ const { profile, signOut, changePassword } = useAuth()
 const { projects, currentProject, selectProject } = useProject()
 
 const userName = computed(() => profile.value?.full_name || 'User')
-const isAdmin = computed(() => profile.value?.role === 'admin')
+const isAdmin = computed(() => profile.value?.role === 'admin' || profile.value?.role === 'tvgs_truong')
+const roleBadge = computed(() => {
+  if (profile.value?.role === 'admin') return 'Admin'
+  if (profile.value?.role === 'tvgs_truong') return 'TVGS trưởng'
+  return ''
+})
 
 const showDropdown = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
