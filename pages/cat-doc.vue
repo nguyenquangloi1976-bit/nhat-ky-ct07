@@ -379,15 +379,18 @@ function buildRows(side: 'T' | 'P' | null) {
           // bn là lớp cao nhất đã đắp đến → các lớp từ bn đến N (đáy) đã xong
           // lift >= bn nghĩa là lift nằm trong vùng đã đắp (từ bn đến N)
           if (lift < bn) return false
-          // Kiểm tra: đoạn này (kmFrom→kmTo) thực sự có lớp `lift` không?
-          // Nếu ĐTPL cho biết đoạn này max = 25 lớp → không tô lớp 26+
+          // lift === bn → đúng lớp đã ghi → luôn hiện
+          if (lift === bn) return true
+          // lift > bn → lớp dưới lớp đã ghi, chỉ hiện nếu ĐTPL xác nhận đoạn có lớp đó
           if (itemType) {
             const a0 = Number(l.km_from)
             const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
             const maxInRange = getMaxLayerForRange(itemType, side, Math.min(a0, b0), Math.max(a0, b0))
-            if (maxInRange > 0 && lift > maxInRange) return false
+            if (maxInRange === 0) return false  // không có ĐTPL → không mở rộng
+            if (lift > maxInRange) return false  // vượt quá số lớp ĐTPL
+            return true
           }
-          return true
+          return false  // không xác định được item_type → không mở rộng
         })
         .map(l => {
           const a0 = Number(l.km_from)
