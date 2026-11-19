@@ -31,3 +31,6 @@ logs
 
 # Google Service Account key (secret)
 nhat-ky-ct07-*.json
+
+OAuth client.txt
+client_secret_*.json

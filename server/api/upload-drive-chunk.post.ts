@@ -1,46 +1,67 @@
 export default defineEventHandler(async (event) => {
-  const formData = await readMultipartFormData(event)
-  if (!formData) {
-    throw createError({ statusCode: 400, message: 'Không có dữ liệu' })
+  const contentType = getHeader(event, 'content-type') || ''
+
+  // Đọc query params
+  const query = getQuery(event)
+  const sessionUrl = query.sessionUrl as string
+  const offset = parseInt(query.offset as string, 10)
+  const totalSize = parseInt(query.totalSize as string, 10)
+
+  if (!sessionUrl || isNaN(offset) || isNaN(totalSize)) {
+    throw createError({ statusCode: 400, statusMessage: 'Thiếu sessionUrl, offset hoặc totalSize' })
   }
 
-  const chunkField = formData.find((f) => f.name === 'chunk')
-  const sessionUrlField = formData.find((f) => f.name === 'sessionUrl')
-  const startField = formData.find((f) => f.name === 'start')
-  const endField = formData.find((f) => f.name === 'end')
-  const totalField = formData.find((f) => f.name === 'total')
-
-  if (!chunkField?.data || !sessionUrlField?.data) {
-    throw createError({ statusCode: 400, message: 'Thiếu chunk hoặc sessionUrl' })
+  // Đọc raw body (binary)
+  const chunk = await readRawBody(event, false)
+  if (!chunk || chunk.length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'Chunk rỗng' })
   }
 
-  const sessionUrl = sessionUrlField.data.toString()
-  const start = Number(startField?.data.toString() || '0')
-  const end = Number(endField?.data.toString() || '0')
-  const total = Number(totalField?.data.toString() || '0')
+  const chunkSize = chunk.length
+  const rangeEnd = offset + chunkSize - 1
+  const contentRange = `bytes ${offset}-${rangeEnd}/${totalSize}`
 
-  const resp = await fetch(sessionUrl, {
+  // Gửi chunk lên Google
+  const res = await fetch(sessionUrl, {
     method: 'PUT',
     headers: {
-      'Content-Length': String(chunkField.data.length),
-      'Content-Range': `bytes ${start}-${end}/${total}`,
+      'Content-Length': String(chunkSize),
+      'Content-Range': contentRange,
     },
-    body: chunkField.data,
+    body: chunk,
   })
 
-  // Google trả 308 nếu chưa xong, 200 nếu xong
-  if (resp.status === 308) {
-    return { done: false }
+  // 308 = cần chunk tiếp, 200/201 = hoàn tất
+  if (res.status === 308) {
+    return { done: false, uploaded: rangeEnd + 1 }
   }
 
-  if (resp.ok) {
-    const data = (await resp.json()) as { id?: string }
+  if (res.ok) {
+    const fileData = await res.json()
+    const fileId = fileData.id
+    // Đặt quyền xem cho anyone
+    try {
+      const { getAccessToken } = await import('../utils/google-auth')
+      const accessToken = await getAccessToken()
+      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+      })
+    } catch (_) {
+      // Không set được permission thì bỏ qua
+    }
+
     return {
       done: true,
-      url: `https://drive.google.com/file/d/${data.id}/view`,
+      fileId,
+      fileUrl: `https://drive.google.com/file/d/${fileId}/view`,
     }
   }
 
-  const errText = await resp.text()
-  throw createError({ statusCode: 500, message: `Upload chunk lỗi (${resp.status}): ${errText}` })
+  const err = await res.text()
+  throw createError({ statusCode: res.status, statusMessage: `Upload chunk lỗi: ${err}` })
 })

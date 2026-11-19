@@ -13,9 +13,10 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     // Server-side only (không lộ ra client)
-    googleServiceAccountEmail: process.env.NUXT_GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
-    googlePrivateKey: process.env.NUXT_GOOGLE_PRIVATE_KEY || '',
-    googleDriveFolderId: process.env.NUXT_GOOGLE_DRIVE_FOLDER_ID || '',
+    googleOauthClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
+    googleOauthClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+    googleOauthRefreshToken: process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '',
+    googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     public: {
       supabaseUrl: process.env.SUPABASE_URL || '',

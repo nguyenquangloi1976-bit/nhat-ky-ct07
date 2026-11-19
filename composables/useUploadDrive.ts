@@ -1,4 +1,4 @@
-const CHUNK_SIZE = 3 * 1024 * 1024 // 3MB mỗi phần (< 4.5MB limit Vercel)
+const CHUNK_SIZE = 3 * 1024 * 1024 // 3MB — dưới giới hạn 4.5MB của Vercel
 
 export function useUploadDrive() {
   const uploading = ref(false)
@@ -12,7 +12,7 @@ export function useUploadDrive() {
 
     try {
       // Bước 1: Khởi tạo upload session
-      const { sessionUrl } = await $fetch<{ sessionUrl: string }>('/api/upload-drive', {
+      const initRes = await $fetch<{ sessionUrl: string }>('/api/upload-drive', {
         method: 'POST',
         body: {
           fileName: file.name,
@@ -21,44 +21,47 @@ export function useUploadDrive() {
         },
       })
 
-      // Bước 2: Upload từng chunk qua server
-      let driveUrl: string | null = null
+      const { sessionUrl } = initRes
       const totalSize = file.size
+      let offset = 0
 
-      for (let start = 0; start < totalSize; start += CHUNK_SIZE) {
-        const end = Math.min(start + CHUNK_SIZE, totalSize)
-        const chunk = file.slice(start, end)
+      // Bước 2: Gửi từng chunk
+      while (offset < totalSize) {
+        const end = Math.min(offset + CHUNK_SIZE, totalSize)
+        const chunk = file.slice(offset, end)
 
-        const formData = new FormData()
-        formData.append('chunk', chunk)
-        formData.append('sessionUrl', sessionUrl)
-        formData.append('start', String(start))
-        formData.append('end', String(end - 1))
-        formData.append('total', String(totalSize))
+        const res = await $fetch<{ done: boolean; uploaded?: number; fileUrl?: string }>(
+          '/api/upload-drive-chunk',
+          {
+            method: 'POST',
+            params: {
+              sessionUrl,
+              offset,
+              totalSize,
+            },
+            body: chunk,
+            headers: {
+              'Content-Type': 'application/octet-stream',
+            },
+          }
+        )
 
-        const result = await $fetch<{ done: boolean; url?: string }>('/api/upload-drive-chunk', {
-          method: 'POST',
-          body: formData,
-        })
-
-        uploadProgress.value = Math.round((end / totalSize) * 100)
-
-        if (result.done && result.url) {
-          driveUrl = result.url
+        if (res.done && res.fileUrl) {
+          uploadProgress.value = 100
+          return res.fileUrl
         }
+
+        offset = res.uploaded || end
+        uploadProgress.value = Math.round((offset / totalSize) * 100)
       }
 
-      if (!driveUrl) {
-        throw new Error('Upload hoàn tất nhưng không nhận được link')
-      }
-
-      return driveUrl
+      uploadError.value = 'Upload không hoàn tất'
+      return null
     } catch (err: any) {
-      uploadError.value = err.data?.message || err.message || 'Lỗi upload'
+      uploadError.value = err?.data?.message || err?.message || 'Lỗi upload'
       return null
     } finally {
       uploading.value = false
-      uploadProgress.value = 0
     }
   }
 

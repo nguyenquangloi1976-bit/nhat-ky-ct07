@@ -155,31 +155,35 @@
             <input v-model="form.approved_date" type="date" class="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
 
-          <!-- Upload hồ sơ -->
+          <!-- Upload / Link hồ sơ -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Hồ sơ đính kèm</label>
-            <div v-if="!form.file_url" class="flex items-center gap-2">
-              <label class="flex-1 flex items-center justify-center border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer hover:border-primary-400 transition"
-                :class="selectedFile ? 'border-green-400 bg-green-50' : 'border-gray-300'">
-                <input type="file" class="hidden" @change="onFileSelect"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" />
-                <span v-if="!selectedFile" class="text-sm text-gray-500">📎 Chọn file để upload lên Drive</span>
-                <span v-else class="text-sm text-green-700 truncate">{{ selectedFile.name }}</span>
-              </label>
-              <button v-if="selectedFile" @click="doUpload" :disabled="uploading" type="button"
-                class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
-                {{ uploading ? 'Đang tải...' : 'Upload' }}
-              </button>
+            <div v-if="!form.file_url">
+              <div class="flex items-center gap-2">
+                <label class="flex-1 flex items-center justify-center border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer hover:border-primary-400 transition"
+                  :class="selectedFile ? 'border-green-400 bg-green-50' : 'border-gray-300'">
+                  <input type="file" class="hidden" @change="onFileSelect"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" />
+                  <span v-if="!selectedFile" class="text-sm text-gray-500">📎 Chọn file để upload lên Drive</span>
+                  <span v-else class="text-sm text-green-700 truncate">{{ selectedFile.name }}</span>
+                </label>
+                <button v-if="selectedFile" @click="doUpload" :disabled="uploading" type="button"
+                  class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+                  {{ uploading ? 'Đang tải...' : 'Upload' }}
+                </button>
+              </div>
+              <div class="mt-2">
+                <input v-model="manualUrl" type="url" class="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Hoặc dán link Google Drive..." @change="if(manualUrl) form.file_url = manualUrl" />
+              </div>
             </div>
-            <div v-if="form.file_url" class="flex items-center gap-2 mt-1 p-2 bg-green-50 rounded-lg border border-green-200">
+            <div v-else class="flex items-center gap-2 mt-1 p-2 bg-green-50 rounded-lg border border-green-200">
               <span class="text-green-600">✓</span>
               <a :href="form.file_url" target="_blank" class="text-xs text-blue-600 hover:underline truncate flex-1">
                 {{ form.file_url }}
               </a>
-              <button @click="form.file_url = ''; selectedFile = null" type="button"
-                class="text-xs text-gray-400 hover:text-red-500">✕</button>
+              <button @click="form.file_url = ''" type="button" class="text-xs text-gray-400 hover:text-red-500">✕</button>
             </div>
-            <!-- Thanh tiến trình -->
             <div v-if="uploading" class="mt-1">
               <div class="w-full bg-gray-200 rounded-full h-2">
                 <div class="bg-blue-600 h-2 rounded-full transition-all" :style="{ width: uploadProgress + '%' }"></div>
@@ -245,9 +249,7 @@ const {
 const { showToast } = useToast()
 const { uploadFile, uploading, uploadError, uploadProgress } = useUploadDrive()
 const selectedFile = ref<File | null>(null)
-
-const showAdd = ref(false)
-const searchQuery = ref('')
+const manualUrl = ref('')
 
 function onFileSelect(e: Event) {
   const input = e.target as HTMLInputElement
@@ -259,8 +261,14 @@ function onFileSelect(e: Event) {
 async function doUpload() {
   if (!selectedFile.value) return
   const url = await uploadFile(selectedFile.value)
-  if (url) form.value.file_url = url
+  if (url) {
+    form.value.file_url = url
+    selectedFile.value = null
+  }
 }
+
+const showAdd = ref(false)
+const searchQuery = ref('')
 
 const filteredSources = computed(() => {
   if (!searchQuery.value) return sources.value
@@ -315,7 +323,6 @@ function closeModal() {
   showAdd.value = false
   editingSrc.value = null
   form.value = defaultForm()
-  selectedFile.value = null
 }
 
 async function saveSrc() {
