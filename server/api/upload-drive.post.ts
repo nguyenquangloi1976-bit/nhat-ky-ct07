@@ -3,7 +3,7 @@ import crypto from 'crypto'
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const body = await readBody(event)
-  const { fileName, mimeType } = body
+  const { fileName, mimeType, fileSize } = body
 
   const email = config.googleServiceAccountEmail as string
   const privateKey = (config.googlePrivateKey as string).replace(/\\n/g, '\n')
@@ -13,10 +13,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, message: 'Chưa cấu hình Google Drive credentials' })
   }
 
-  // 1. Tạo JWT
   const jwt = createJWT(email, privateKey)
 
-  // 2. Lấy access token
   const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -24,13 +22,9 @@ export default defineEventHandler(async (event) => {
   })
   const tokenData = (await tokenResp.json()) as { access_token?: string; error?: string }
   if (!tokenData.access_token) {
-    throw createError({
-      statusCode: 500,
-      message: `Google auth thất bại: ${tokenData.error || 'unknown'}`,
-    })
+    throw createError({ statusCode: 500, message: `Google auth thất bại: ${tokenData.error || 'unknown'}` })
   }
 
-  // 3. Khởi tạo resumable upload — trả về URL để client upload thẳng lên Google
   const initResp = await fetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
     {
@@ -39,24 +33,19 @@ export default defineEventHandler(async (event) => {
         Authorization: `Bearer ${tokenData.access_token}`,
         'Content-Type': 'application/json; charset=UTF-8',
         'X-Upload-Content-Type': mimeType || 'application/octet-stream',
+        'X-Upload-Content-Length': String(fileSize || 0),
       },
-      body: JSON.stringify({
-        name: fileName,
-        parents: [folderId],
-      }),
+      body: JSON.stringify({ name: fileName, parents: [folderId] }),
     }
   )
 
-  const uploadUrl = initResp.headers.get('location')
-  if (!uploadUrl) {
+  const sessionUrl = initResp.headers.get('location')
+  if (!sessionUrl) {
     const err = (await initResp.json()) as { error?: { message: string } }
-    throw createError({
-      statusCode: 500,
-      message: `Drive init lỗi: ${err.error?.message || 'unknown'}`,
-    })
+    throw createError({ statusCode: 500, message: `Drive init lỗi: ${err.error?.message || 'unknown'}` })
   }
 
-  return { uploadUrl }
+  return { sessionUrl }
 })
 
 function createJWT(email: string, privateKey: string): string {
@@ -71,11 +60,9 @@ function createJWT(email: string, privateKey: string): string {
       exp: now + 3600,
     })
   ).toString('base64url')
-
   const signInput = `${header}.${payload}`
   const sign = crypto.createSign('RSA-SHA256')
   sign.update(signInput)
   const signature = sign.sign(privateKey, 'base64url')
-
   return `${signInput}.${signature}`
 }

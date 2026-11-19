@@ -179,6 +179,13 @@
               <button @click="form.file_url = ''; selectedFile = null" type="button"
                 class="text-xs text-gray-400 hover:text-red-500">✕</button>
             </div>
+            <!-- Thanh tiến trình -->
+            <div v-if="uploading" class="mt-1">
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div class="bg-blue-600 h-2 rounded-full transition-all" :style="{ width: uploadProgress + '%' }"></div>
+              </div>
+              <p class="text-xs text-gray-500 mt-0.5">{{ uploadProgress }}%</p>
+            </div>
             <p v-if="uploadError" class="text-xs text-red-600 mt-1">{{ uploadError }}</p>
           </div>
 
@@ -236,7 +243,7 @@ const {
 } = useMaterialSources()
 
 const { showToast } = useToast()
-const { uploadFile, uploading, uploadError } = useUploadDrive()
+const { uploadFile, uploading, uploadError, uploadProgress } = useUploadDrive()
 const selectedFile = ref<File | null>(null)
 
 const showAdd = ref(false)

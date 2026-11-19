@@ -28,3 +28,6 @@ logs
 
 .vercel
 .env*
+
+# Google Service Account key (secret)
+nhat-ky-ct07-*.json
