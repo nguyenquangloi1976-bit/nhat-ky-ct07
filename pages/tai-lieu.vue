@@ -340,5 +340,12 @@ async function confirmDelete(doc: any) {
   }
 }
 
+const { currentProject } = useProject()
+
 onMounted(() => loadDocs())
+
+// Reload khi project sẵn sàng (load bất đồng bộ)
+watch(() => currentProject.value, (val) => {
+  if (val) loadDocs()
+})
 </script>
