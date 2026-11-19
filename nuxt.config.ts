@@ -16,6 +16,7 @@ export default defineNuxtConfig({
     googleServiceAccountEmail: process.env.NUXT_GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
     googlePrivateKey: process.env.NUXT_GOOGLE_PRIVATE_KEY || '',
     googleDriveFolderId: process.env.NUXT_GOOGLE_DRIVE_FOLDER_ID || '',
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     public: {
       supabaseUrl: process.env.SUPABASE_URL || '',
       supabaseKey: process.env.SUPABASE_KEY || '',

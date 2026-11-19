@@ -17,7 +17,7 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-600 mb-1">Mật khẩu <span class="text-red-500">*</span></label>
-            <input v-model="newUser.password" type="password" required minlength="6"
+            <input v-model="newUser.password" type="text" required minlength="6"
               class="input-field" placeholder="Tối thiểu 6 ký tự" />
           </div>
           <div>
@@ -61,6 +61,7 @@
             <th class="text-left px-4 py-3">Email</th>
             <th class="text-left px-4 py-3">Đơn vị</th>
             <th class="text-center px-4 py-3">Vai trò</th>
+            <th class="text-center px-4 py-3">Mật khẩu</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -76,13 +77,32 @@
             <td class="px-4 py-3 text-center">
               <select v-model="u.role" @change="updateUser(u)" class="input-xs">
                 <option value="engineer">Kỹ sư</option>
-              <option value="tvgs_truong">TVGS trưởng</option>
+                <option value="tvgs_truong">TVGS trưởng</option>
                 <option value="admin">Admin</option>
               </select>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <div v-if="u._resetMode" class="flex items-center gap-1">
+                <input v-model="u._newPw" type="text" placeholder="Mật khẩu mới"
+                  class="w-28 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-primary-500" />
+                <button @click="doResetPassword(u)" :disabled="u._resetting"
+                  class="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50">
+                  {{ u._resetting ? '...' : 'OK' }}
+                </button>
+                <button @click="u._resetMode = false"
+                  class="px-2 py-1 text-gray-500 text-xs hover:text-gray-700">✕</button>
+              </div>
+              <button v-else @click="u._resetMode = true; u._newPw = ''"
+                class="px-2 py-1 text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded">
+                Đặt lại
+              </button>
             </td>
             <td class="px-4 py-3 text-right">
               <span v-if="u.saving" class="text-xs text-gray-400">Đang lưu...</span>
               <span v-if="u.saved" class="text-xs text-green-600">Đã lưu ✓</span>
+              <span v-if="u._resetMsg" :class="u._resetOk ? 'text-green-600' : 'text-red-600'" class="text-xs">
+                {{ u._resetMsg }}
+              </span>
             </td>
           </tr>
         </tbody>
@@ -122,7 +142,6 @@ async function createUser() {
   createMsg.value = ''
   createMsgOk.value = false
   try {
-    // Use a separate client so admin session is not affected
     const tempClient = createClient(
       config.public.supabaseUrl as string,
       config.public.supabaseKey as string,
@@ -138,8 +157,6 @@ async function createUser() {
     if (signUpErr) throw signUpErr
     if (!data.user) throw new Error('Không tạo được tài khoản')
 
-    // The trigger auto-creates a profile row; now update organization & role
-    // Small delay to let trigger run
     await new Promise(r => setTimeout(r, 500))
 
     const { error: updErr } = await $supabase
@@ -155,10 +172,8 @@ async function createUser() {
     createMsg.value = `Đã tạo tài khoản ${newUser.email}`
     createMsgOk.value = true
 
-    // Refresh user list
     await loadUsers()
 
-    // Reset form
     newUser.email = ''
     newUser.password = ''
     newUser.full_name = ''
@@ -186,7 +201,16 @@ async function loadUsers() {
   if (err) {
     showError(err.message)
   } else {
-    users.value = (data || []).map((u: any) => ({ ...u, saving: false, saved: false }))
+    users.value = (data || []).map((u: any) => ({
+      ...u,
+      saving: false,
+      saved: false,
+      _resetMode: false,
+      _newPw: '',
+      _resetting: false,
+      _resetMsg: '',
+      _resetOk: false,
+    }))
   }
 }
 
@@ -209,6 +233,31 @@ async function updateUser(u: any) {
     showError(e.message)
   } finally {
     u.saving = false
+  }
+}
+
+async function doResetPassword(u: any) {
+  if (!u._newPw || u._newPw.length < 6) {
+    u._resetMsg = 'Tối thiểu 6 ký tự'
+    u._resetOk = false
+    return
+  }
+  u._resetting = true
+  u._resetMsg = ''
+  try {
+    await $fetch('/api/reset-password', {
+      method: 'POST',
+      body: { userId: u.id, newPassword: u._newPw },
+    })
+    u._resetMsg = 'Đã đổi ✓'
+    u._resetOk = true
+    u._resetMode = false
+    setTimeout(() => { u._resetMsg = '' }, 3000)
+  } catch (err: any) {
+    u._resetMsg = err.data?.message || err.message || 'Lỗi'
+    u._resetOk = false
+  } finally {
+    u._resetting = false
   }
 }
 
