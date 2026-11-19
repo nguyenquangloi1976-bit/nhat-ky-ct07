@@ -309,7 +309,7 @@ function buildRows(side: 'T' | 'P' | null) {
   for (const def of layerDefs.value) {
     const mine = stationLines.value.filter(l =>
       l.work_items?.name === def.name && (side === null || !l.side || l.side === side))
-    const maxBatch = mine.reduce((m, l) => Math.max(m, Number(l.batch_number) || 1), 0)
+    const maxBatch = mine.reduce((m, l) => Math.max(m, Number(l.batch_number) || 0), 0)
     const cfg = liftCount(def.name)
     if (cfg === 0) continue
     const count = Math.max(cfg, cfg > 1 || maxBatch > 1 ? maxBatch : 1)
@@ -321,7 +321,7 @@ function buildRows(side: 'T' | 'P' | null) {
       const segs = mine
         .filter(l => {
           if (count === 1) return true
-          const bn = Number(l.batch_number) || 1
+          const bn = Number(l.batch_number) || count
           // bn là lớp cao nhất đã đắp đến → các lớp từ bn đến N (đáy) đã xong
           // lift >= bn nghĩa là lift nằm trong vùng đã đắp (từ bn đến N)
           return lift >= bn
