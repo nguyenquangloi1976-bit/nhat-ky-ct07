@@ -70,50 +70,11 @@ export function useLayerVolume() {
    * Tính khối lượng (m³) bằng phương pháp hình thang.
    */
   /**
-   * Lấy mặt cắt lân cận gần nhất nằm ngoài khoảng [kmFrom, kmTo].
-   * Dùng để nội suy diện tích tại biên khi mặt cắt không trùng đầu/cuối đoạn.
-   */
-  async function getAdjacentSection(params: {
-    side: 'T' | 'P'
-    layer: number
-    station: number
-    direction: 'before' | 'after'
-    itemType?: string
-  }): Promise<LayerSection | null> {
-    const pid = currentProject.value?.id
-    if (!pid) return null
-
-    const query = $supabase
-      .from('layer_sections')
-      .select('station, layer, side, area, section_name')
-      .eq('project_id', pid)
-      .eq('side', params.side)
-      .eq('layer', params.layer)
-      .eq('item_type', params.itemType || 'K95')
-
-    const { data, error } = params.direction === 'before'
-      ? await query.lt('station', params.station).order('station', { ascending: false }).limit(1)
-      : await query.gt('station', params.station).order('station', { ascending: true }).limit(1)
-
-    if (error || !data || data.length === 0) return null
-    return data[0]
-  }
-
-  /**
-   * Nội suy diện tích tại 1 lý trình dựa trên 2 mặt cắt bao quanh.
-   */
-  function interpolateArea(targetStation: number, s1: LayerSection, s2: LayerSection): number {
-    if (s1.station === s2.station) return s1.area
-    const ratio = (targetStation - s1.station) / (s2.station - s1.station)
-    return s1.area + (s2.area - s1.area) * ratio
-  }
-
-  /**
    * Tính khối lượng (m³) bằng phương pháp hình thang.
-   * Hỗ trợ:
-   * - Nhiều mặt cắt: tính bình thường
-   * - 1 mặt cắt: nội suy tại biên hoặc dùng DT × L
-   * - Nội suy tại đầu/cuối đoạn nếu mặt cắt không trùng biên
+   *
+   * Quy tắc biên: tại đầu/cuối đoạn thi công (kmFrom, kmTo),
+   * nếu không có mặt cắt trùng đúng biên → diện tích tại biên = 0.
+   * Công thức: (F_biên + F_mc) / 2 × khoảng cách = (0 + F) / 2 × L
    */
   async function calcVolume(params: {
     side: 'T' | 'P'
@@ -126,102 +87,22 @@ export function useLayerVolume() {
     const rangeLen = params.kmTo - params.kmFrom
 
     if (sections.length === 0) {
-      // Thử tìm 2 mặt cắt bao quanh để nội suy
-      const before = await getAdjacentSection({ ...params, station: params.kmFrom, direction: 'before' })
-      const after = await getAdjacentSection({ ...params, station: params.kmTo, direction: 'after' })
-      if (before && after) {
-        const areaFrom = interpolateArea(params.kmFrom, before, after)
-        const areaTo = interpolateArea(params.kmTo, before, after)
-        const V = ((areaFrom + areaTo) / 2) * rangeLen
-        return {
-          volume: Math.round(V * 100) / 100,
-          sections: [before, after],
-          formula: `Nội suy: (${areaFrom.toFixed(3)}+${areaTo.toFixed(3)})/2×${rangeLen}=${V.toFixed(2)}`,
-        }
-      }
       return { volume: 0, sections: [], formula: 'Không tìm thấy mặt cắt trong khoảng lý trình' }
     }
 
-    if (sections.length === 1) {
-      const s = sections[0]
-      // Tìm mặt cắt lân cận để nội suy tại hai đầu
-      const before = s.station > params.kmFrom
-        ? await getAdjacentSection({ ...params, station: params.kmFrom, direction: 'before' })
-        : null
-      const after = s.station < params.kmTo
-        ? await getAdjacentSection({ ...params, station: params.kmTo, direction: 'after' })
-        : null
-
-      let volume = 0
-      const parts: string[] = []
-
-      // Đoạn trước mặt cắt (từ kmFrom đến station)
-      if (s.station > params.kmFrom) {
-        const L1 = s.station - params.kmFrom
-        if (before) {
-          const areaFrom = interpolateArea(params.kmFrom, before, s)
-          const V1 = ((areaFrom + s.area) / 2) * L1
-          volume += V1
-          parts.push(`(${areaFrom.toFixed(3)}+${s.area})/2×${L1}=${V1.toFixed(2)}`)
-        } else {
-          // Không có mặt cắt trước → dùng chính diện tích mặt cắt
-          const V1 = s.area * L1
-          volume += V1
-          parts.push(`${s.area}×${L1}=${V1.toFixed(2)}`)
-        }
-      }
-
-      // Đoạn sau mặt cắt (từ station đến kmTo)
-      if (s.station < params.kmTo) {
-        const L2 = params.kmTo - s.station
-        if (after) {
-          const areaTo = interpolateArea(params.kmTo, s, after)
-          const V2 = ((s.area + areaTo) / 2) * L2
-          volume += V2
-          parts.push(`(${s.area}+${areaTo.toFixed(3)})/2×${L2}=${V2.toFixed(2)}`)
-        } else {
-          // Không có mặt cắt sau → dùng chính diện tích mặt cắt
-          const V2 = s.area * L2
-          volume += V2
-          parts.push(`${s.area}×${L2}=${V2.toFixed(2)}`)
-        }
-      }
-
-      // Trường hợp station trùng đúng kmFrom hoặc kmTo và không có đoạn nào
-      if (volume === 0) {
-        const V = s.area * rangeLen
-        volume = V
-        parts.push(`${s.area}×${rangeLen}=${V.toFixed(2)}`)
-      }
-
-      return {
-        volume: Math.round(volume * 100) / 100,
-        sections,
-        formula: parts.join(' + '),
-      }
-    }
-
-    // >= 2 mặt cắt: tính hình thang giữa các mặt cắt liên tiếp
     let volume = 0
     const parts: string[] = []
 
-    // Nội suy đoạn đầu (từ kmFrom đến section đầu tiên) nếu cần
+    // Đoạn đầu: từ kmFrom đến MC đầu tiên
+    // Tại kmFrom, nếu không có MC trùng → DT = 0
     if (sections[0].station > params.kmFrom) {
-      const before = await getAdjacentSection({ ...params, station: params.kmFrom, direction: 'before' })
-      const L0 = sections[0].station - params.kmFrom
-      if (before) {
-        const areaFrom = interpolateArea(params.kmFrom, before, sections[0])
-        const V0 = ((areaFrom + sections[0].area) / 2) * L0
-        volume += V0
-        parts.push(`(${areaFrom.toFixed(3)}+${sections[0].area})/2×${L0}=${V0.toFixed(2)}`)
-      } else {
-        const V0 = sections[0].area * L0
-        volume += V0
-        parts.push(`${sections[0].area}×${L0}=${V0.toFixed(2)}`)
-      }
+      const L = sections[0].station - params.kmFrom
+      const V = (0 + sections[0].area) / 2 * L
+      volume += V
+      parts.push(`(0+${sections[0].area})/2×${L}=${V.toFixed(2)}`)
     }
 
-    // Giữa các mặt cắt
+    // Giữa các mặt cắt liên tiếp
     for (let i = 0; i < sections.length - 1; i++) {
       const s1 = sections[i]
       const s2 = sections[i + 1]
@@ -231,21 +112,14 @@ export function useLayerVolume() {
       parts.push(`(${s1.area}+${s2.area})/2×${L}=${V.toFixed(2)}`)
     }
 
-    // Nội suy đoạn cuối (từ section cuối đến kmTo) nếu cần
+    // Đoạn cuối: từ MC cuối đến kmTo
+    // Tại kmTo, nếu không có MC trùng → DT = 0
     const last = sections[sections.length - 1]
     if (last.station < params.kmTo) {
-      const after = await getAdjacentSection({ ...params, station: params.kmTo, direction: 'after' })
-      const LN = params.kmTo - last.station
-      if (after) {
-        const areaTo = interpolateArea(params.kmTo, last, after)
-        const VN = ((last.area + areaTo) / 2) * LN
-        volume += VN
-        parts.push(`(${last.area}+${areaTo.toFixed(3)})/2×${LN}=${VN.toFixed(2)}`)
-      } else {
-        const VN = last.area * LN
-        volume += VN
-        parts.push(`${last.area}×${LN}=${VN.toFixed(2)}`)
-      }
+      const L = params.kmTo - last.station
+      const V = (last.area + 0) / 2 * L
+      volume += V
+      parts.push(`(${last.area}+0)/2×${L}=${V.toFixed(2)}`)
     }
 
     return {
