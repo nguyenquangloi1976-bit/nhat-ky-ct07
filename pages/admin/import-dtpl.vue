@@ -455,7 +455,7 @@ function parseSelected() {
 
       rows.push({
         side: sheet.side,
-        station: currentLT,
+        station: Math.round(currentLT),
         layer: Math.round(tlVal),
         area: Math.round(dtVal * 1000) / 1000,
         section_name: currentTC,
