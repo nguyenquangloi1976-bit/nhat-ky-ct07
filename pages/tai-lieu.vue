@@ -31,7 +31,21 @@
       </div>
     </div>
 
-    <!-- Filter -->
+    <!-- Group Tabs -->
+    <div class="flex items-center space-x-2 mb-4 overflow-x-auto pb-1">
+      <button @click="filterGroup = ''"
+        :class="['px-4 py-1.5 text-sm rounded-full border whitespace-nowrap transition',
+          filterGroup === '' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400']">
+        Tất cả ({{ docs.length }})
+      </button>
+      <button v-for="(label, code) in GROUP_LABELS" :key="code" @click="filterGroup = code"
+        :class="['px-4 py-1.5 text-sm rounded-full border whitespace-nowrap transition',
+          filterGroup === code ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400']">
+        {{ code }} – {{ label }} ({{ groupCount(code) }})
+      </button>
+    </div>
+
+    <!-- Search + Status filter -->
     <div class="flex items-center flex-wrap gap-3 mb-4">
       <div class="relative flex-1 min-w-[200px]">
         <input v-model="searchQuery" type="text" placeholder="Tìm kiếm tài liệu..."
@@ -43,10 +57,6 @@
       <select v-model="filterStatus" class="border rounded-lg px-3 py-1.5 text-sm">
         <option value="">Tất cả trạng thái</option>
         <option v-for="(label, code) in STATUS_LABELS" :key="code" :value="code">{{ label }}</option>
-      </select>
-      <select v-model="filterGroup" class="border rounded-lg px-3 py-1.5 text-sm">
-        <option value="">Tất cả nhóm</option>
-        <option v-for="(label, code) in GROUP_LABELS" :key="code" :value="code">{{ code }} – {{ label }}</option>
       </select>
     </div>
 
@@ -243,6 +253,10 @@ const defaultForm = () => ({
 })
 
 const form = ref(defaultForm())
+
+function groupCount(code: string) {
+  return docs.value.filter(d => d.group_code === code).length
+}
 
 const filtered = computed(() => {
   let list = docs.value
