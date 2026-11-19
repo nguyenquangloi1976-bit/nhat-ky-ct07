@@ -34,15 +34,12 @@ export function useUploadDrive() {
           '/api/upload-drive-chunk',
           {
             method: 'POST',
-            params: {
-              sessionUrl,
-              offset,
-              totalSize,
-            },
-            body: chunk,
+            params: { offset, totalSize },
             headers: {
               'Content-Type': 'application/octet-stream',
+              'x-session-url': sessionUrl,
             },
+            body: chunk,
           }
         )
 

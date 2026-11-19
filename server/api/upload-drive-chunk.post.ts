@@ -3,7 +3,7 @@ export default defineEventHandler(async (event) => {
 
   // Đọc query params
   const query = getQuery(event)
-  const sessionUrl = query.sessionUrl as string
+  const sessionUrl = getHeader(event, 'x-session-url') || (query.sessionUrl as string)
   const offset = parseInt(query.offset as string, 10)
   const totalSize = parseInt(query.totalSize as string, 10)
 
