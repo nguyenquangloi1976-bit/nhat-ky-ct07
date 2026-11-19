@@ -55,7 +55,11 @@
                 <span v-if="s.has_left_right" class="ml-2 text-primary-500">T/P</span>
               </p>
             </div>
-            <span class="text-xs text-gray-400">{{ getWorkItemCount(s.id) }} hạng mục</span>
+            <div class="flex items-center space-x-3">
+              <span class="text-xs text-gray-400">{{ getWorkItemCount(s.id) }} hạng mục</span>
+              <button @click.stop="deleteStructureConfirm(s)"
+                class="text-red-400 hover:text-red-600 text-xs">Xóa</button>
+            </div>
           </div>
         </div>
       </div>
@@ -205,7 +209,7 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
 
-const { getTypes, addType, deleteType, getStructures, getWorkItems, addWorkItem, deleteWorkItem, addStructure: composableAddStructure } = useStructures()
+const { getTypes, addType, deleteType, getStructures, getWorkItems, addWorkItem, deleteWorkItem, addStructure: composableAddStructure, deleteStructure } = useStructures()
 const { isAdmin } = useAuth()
 const { success, error: showError } = useToast()
 const router = useRouter()
@@ -335,6 +339,33 @@ async function deleteWorkItemConfirm(wi: any) {
     showError(e.message)
   }
 }
+async function deleteStructureConfirm(s: any) {
+  const count = getWorkItemCount(s.id)
+  const msg = count && count !== '?'
+    ? `Công trình "${s.name}" có ${count} hạng mục. Xóa sẽ xóa tất cả hạng mục bên trong!\nBạn chắc chắn?`
+    : `Xóa công trình "${s.name}"?`
+  if (!confirm(msg)) return
+  try {
+    await deleteStructure(s.id)
+    allStructures.value = await getStructures()
+    if (selectedStructure.value?.id === s.id) {
+      selectedStructure.value = null
+      workItems.value = []
+    }
+    // Refresh work item counts
+    const { $supabase } = useNuxtApp()
+    const { data: counts } = await $supabase.from('work_items').select('structure_id')
+    if (counts) {
+      const map: Record<string, number> = {}
+      for (const c of counts) { map[c.structure_id] = (map[c.structure_id] || 0) + 1 }
+      workItemCounts.value = map
+    }
+    success('Đã xóa công trình')
+  } catch (e: any) {
+    showError(e.message)
+  }
+}
+
 
 onMounted(async () => {
   if (!isAdmin.value) {
