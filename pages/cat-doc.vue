@@ -229,6 +229,8 @@ const layerDefs = computed(() => {
 const dtplLayerCounts = ref<Record<string, number>>({})
 // Max layer per item_type+side, key = "item_type:side"
 const dtplLayerCountsBySide = ref<Record<string, number>>({})
+// Chi tiết: mỗi station có max layer bao nhiêu, key = "item_type:side"
+const dtplStationMaxLayer = ref<Record<string, { station: number; maxLayer: number }[]>>({})
 
 // Map item_type → regex khớp tên hạng mục (ngược lại ITEM_TYPE_MAP trong reports)
 const ITEM_TYPE_NAME_MAP: { itemType: string; pattern: RegExp }[] = [
@@ -255,25 +257,53 @@ function _itemTypeForName(name: string): string | null {
 async function loadDtplLayerCounts() {
   const pid = currentProject.value?.id
   if (!pid) return
-  // Query max layer per item_type (+ side) from layer_sections
+  // Query max layer per item_type (+ side + station) from layer_sections
   const { data, error } = await $supabase
     .from('layer_sections')
-    .select('item_type, layer, side')
+    .select('item_type, layer, side, station')
     .eq('project_id', pid)
   if (error || !data) return
   const maxByType: Record<string, number> = {}
   const maxByTypeSide: Record<string, number> = {}
+  // station → max layer per item_type:side
+  const stationMap: Record<string, Map<number, number>> = {}
   for (const row of data) {
     const t = row.item_type || 'K95'
     if (!maxByType[t] || row.layer > maxByType[t]) maxByType[t] = row.layer
-    // Lưu thêm theo side
     if (row.side) {
       const key = `${t}:${row.side}`
       if (!maxByTypeSide[key] || row.layer > maxByTypeSide[key]) maxByTypeSide[key] = row.layer
+      // Per station
+      if (!stationMap[key]) stationMap[key] = new Map()
+      const cur = stationMap[key].get(row.station) || 0
+      if (row.layer > cur) stationMap[key].set(row.station, row.layer)
     }
   }
   dtplLayerCounts.value = maxByType
   dtplLayerCountsBySide.value = maxByTypeSide
+  // Convert Map → sorted array for range queries
+  const result: Record<string, { station: number; maxLayer: number }[]> = {}
+  for (const [key, map] of Object.entries(stationMap)) {
+    result[key] = Array.from(map.entries())
+      .map(([station, maxLayer]) => ({ station, maxLayer }))
+      .sort((a, b) => a.station - b.station)
+  }
+  dtplStationMaxLayer.value = result
+}
+
+// Tìm max layer trong đoạn [kmFrom, kmTo] từ ĐTPL
+function getMaxLayerForRange(itemType: string, side: string | null, kmFrom: number, kmTo: number): number {
+  const key = side ? `${itemType}:${side}` : null
+  const arr = key ? dtplStationMaxLayer.value[key] : null
+  if (!arr || arr.length === 0) return 0
+  let maxL = 0
+  for (const s of arr) {
+    if (s.station >= kmFrom && s.station <= kmTo) {
+      if (s.maxLayer > maxL) maxL = s.maxLayer
+    }
+    if (s.station > kmTo) break  // sorted, no need to continue
+  }
+  return maxL
 }
 
 function liftCount(name: string, side?: 'T' | 'P' | null) {
@@ -341,13 +371,23 @@ function buildRows(side: 'T' | 'P' | null) {
     // Ghi lớp X → đã đắp từ đáy (N) lên đến lớp X → tô lớp X, X+1, ..., N
     // Lớp `lift` được tô nếu có diary line có batch_number ≤ lift (line ở lớp cao hơn → đã qua lift)
     for (let lift = 1; lift <= count; lift++) {
+      const itemType = _itemTypeForName(def.name)
       const segs = mine
         .filter(l => {
           if (count === 1) return true
           const bn = Number(l.batch_number) || count
           // bn là lớp cao nhất đã đắp đến → các lớp từ bn đến N (đáy) đã xong
           // lift >= bn nghĩa là lift nằm trong vùng đã đắp (từ bn đến N)
-          return lift >= bn
+          if (lift < bn) return false
+          // Kiểm tra: đoạn này (kmFrom→kmTo) thực sự có lớp `lift` không?
+          // Nếu ĐTPL cho biết đoạn này max = 25 lớp → không tô lớp 26+
+          if (itemType) {
+            const a0 = Number(l.km_from)
+            const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
+            const maxInRange = getMaxLayerForRange(itemType, side, Math.min(a0, b0), Math.max(a0, b0))
+            if (maxInRange > 0 && lift > maxInRange) return false
+          }
+          return true
         })
         .map(l => {
           const a0 = Number(l.km_from)
