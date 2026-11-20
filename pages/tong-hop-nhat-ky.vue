@@ -313,7 +313,7 @@ const rowsAll = computed(() => rawLines.value.map((l: any) => {
 
 const filtered = computed(() => rowsAll.value
   .filter(r => (!typeId.value || r.typeId === typeId.value) && (!structureId.value || r.structureId === structureId.value))
-  .sort((x, y) => x.date.localeCompare(y.date)
+  .sort((x, y) => y.date.localeCompare(x.date)
     || x.structureName.localeCompare(y.structureName, 'vi')
     || (x.createdAt || '').localeCompare(y.createdAt || '')))
 
