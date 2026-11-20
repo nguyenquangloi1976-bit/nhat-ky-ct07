@@ -50,10 +50,10 @@
         </div>
       </div>
 
-      <!-- Add new item form (admin / TVGS trưởng only) -->
-      <div v-if="selectedType && canEdit" class="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <!-- Add new item form -->
+      <div v-if="selectedType" class="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 class="font-semibold text-gray-700 mb-3">Thêm hạng mục mới vào danh mục</h3>
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <div>
             <label class="block text-xs text-gray-500 mb-1">Nhóm</label>
             <input v-model="newItem.group_name" class="input-field w-full" placeholder="Bê tông, Cốt thép..."
@@ -69,10 +69,6 @@
           <div>
             <label class="block text-xs text-gray-500 mb-1">Đơn vị</label>
             <input v-model="newItem.unit" class="input-field w-full" placeholder="m³, tấn, m²..." />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-500 mb-1">Chiều dày</label>
-            <input v-model="newItem.thickness" class="input-field w-full" placeholder="VD: 48cm, 10cm" />
           </div>
           <div>
             <button @click="addCatalogItem"
@@ -105,78 +101,31 @@
             </div>
             <table class="w-full text-sm">
               <tbody class="divide-y">
-                <!-- View mode -->
                 <tr v-for="item in group.items" :key="item.id" class="hover:bg-gray-50">
-                  <template v-if="editingRow !== item.id">
-                    <td class="px-4 py-2.5 font-medium text-gray-800" style="width:35%">
-                      {{ item.name }}
-                    </td>
-                    <td class="px-4 py-2.5 text-gray-500 w-20 text-center">
-                      {{ item.unit }}
-                    </td>
-                    <td class="px-4 py-2.5 w-24 text-center">
-                      <span v-if="item.thickness"
-                        class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-700">
-                        {{ item.thickness }}
-                      </span>
-                      <span v-else class="text-gray-300 text-xs">—</span>
-                    </td>
-                    <td class="px-4 py-2.5 w-20 text-center">
-                      <span :class="[
-                        'px-2 py-0.5 text-xs rounded-full',
-                        item.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                      ]">
-                        {{ item.is_active ? 'Hoạt động' : 'Ẩn' }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-right w-44">
-                      <template v-if="canEdit">
-                        <button @click="startEditRow(item)"
-                          class="text-xs text-primary-500 hover:text-primary-700 mr-3">
-                          Sửa
-                        </button>
-                        <button @click="toggleActive(item)"
-                          class="text-xs mr-3"
-                          :class="item.is_active ? 'text-gray-400 hover:text-gray-600' : 'text-green-500 hover:text-green-700'">
-                          {{ item.is_active ? 'Ẩn' : 'Hiện' }}
-                        </button>
-                        <button @click="deleteCatalogItem(item)" class="text-xs text-red-400 hover:text-red-600">
-                          Xóa
-                        </button>
-                      </template>
-                    </td>
-                  </template>
-                  <!-- Edit mode -->
-                  <template v-else>
-                    <td class="px-2 py-1.5" style="width:35%">
-                      <input v-model="editRow.name"
-                        class="w-full px-2 py-1 border border-primary-300 rounded text-sm focus:ring-1 focus:ring-primary-500" />
-                    </td>
-                    <td class="px-2 py-1.5 w-20">
-                      <input v-model="editRow.unit"
-                        class="w-full px-2 py-1 border border-primary-300 rounded text-sm text-center focus:ring-1 focus:ring-primary-500" />
-                    </td>
-                    <td class="px-2 py-1.5 w-24">
-                      <input v-model="editRow.thickness"
-                        class="w-full px-2 py-1 border border-primary-300 rounded text-sm text-center focus:ring-1 focus:ring-primary-500"
-                        placeholder="48cm" />
-                    </td>
-                    <td class="px-2 py-1.5 w-20">
-                      <input v-model="editRow.group_name"
-                        class="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-primary-500"
-                        title="Nhóm" />
-                    </td>
-                    <td class="px-2 py-1.5 text-right w-44 whitespace-nowrap">
-                      <button @click="saveEditRow(item)"
-                        class="text-xs text-green-600 hover:text-green-800 font-medium mr-2">
-                        Lưu
-                      </button>
-                      <button @click="editingRow = ''"
-                        class="text-xs text-gray-400 hover:text-gray-600">
-                        Hủy
-                      </button>
-                    </td>
-                  </template>
+                  <td class="px-4 py-2.5 font-medium text-gray-800 w-1/2">
+                    {{ item.name }}
+                  </td>
+                  <td class="px-4 py-2.5 text-gray-500 w-24 text-center">
+                    {{ item.unit }}
+                  </td>
+                  <td class="px-4 py-2.5 w-20 text-center">
+                    <span :class="[
+                      'px-2 py-0.5 text-xs rounded-full',
+                      item.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                    ]">
+                      {{ item.is_active ? 'Hoạt động' : 'Ẩn' }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-2.5 text-right w-40">
+                    <button @click="toggleActive(item)"
+                      class="text-xs mr-3"
+                      :class="item.is_active ? 'text-gray-400 hover:text-gray-600' : 'text-green-500 hover:text-green-700'">
+                      {{ item.is_active ? 'Ẩn' : 'Hiện' }}
+                    </button>
+                    <button @click="deleteCatalogItem(item)" class="text-xs text-red-400 hover:text-red-600">
+                      Xóa
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -226,7 +175,6 @@
                     @change="toggleItemAssign(item, $event)"
                     class="mr-2" />
                   <span>{{ item.name }}</span>
-                  <span v-if="item.thickness" class="ml-1 text-blue-500 text-xs">({{ item.thickness }})</span>
                   <span class="ml-2 text-gray-400 text-xs">({{ item.unit }})</span>
                 </label>
               </div>
@@ -242,15 +190,10 @@
 definePageMeta({ middleware: 'auth' })
 
 const { $supabase } = useNuxtApp()
-const { isAdmin, profile } = useAuth()
+const { isAdmin } = useAuth()
 const { getStructures, addWorkItem, deleteWorkItem } = useStructures()
 const { success, error: showError } = useToast()
 const router = useRouter()
-
-// Quyền sửa danh mục: admin hoặc TVGS trưởng
-const canEdit = computed(() =>
-  isAdmin.value || (profile.value as any)?.title === 'TVGS trưởng'
-)
 
 // Project dropdown
 const allProjects = ref<any[]>([])
@@ -268,47 +211,7 @@ const allStructures = ref<any[]>([])
 const assignStructureId = ref('')
 const assignedItems = ref<any[]>([])
 
-const newItem = reactive({ group_name: '', name: '', unit: '', thickness: '' })
-
-// Inline edit row
-const editingRow = ref('')
-const editRow = reactive({ name: '', unit: '', thickness: '', group_name: '' })
-
-function startEditRow(item: any) {
-  editingRow.value = item.id
-  Object.assign(editRow, {
-    name: item.name || '',
-    unit: item.unit || '',
-    thickness: item.thickness || '',
-    group_name: item.group_name || '',
-  })
-}
-
-async function saveEditRow(item: any) {
-  const updates: Record<string, any> = {}
-  if (editRow.name.trim() !== item.name) updates.name = editRow.name.trim()
-  if (editRow.unit.trim() !== item.unit) updates.unit = editRow.unit.trim()
-  const newThickness = editRow.thickness.trim() || null
-  if (newThickness !== (item.thickness || null)) updates.thickness = newThickness
-  if (editRow.group_name.trim() !== item.group_name) updates.group_name = editRow.group_name.trim()
-
-  editingRow.value = ''
-
-  if (Object.keys(updates).length === 0) return // no change
-
-  try {
-    const { error: err } = await $supabase
-      .from('work_item_catalog')
-      .update(updates)
-      .eq('id', item.id)
-    if (err) throw err
-    // Update local
-    Object.assign(item, updates)
-    success('Đã cập nhật')
-  } catch (e: any) {
-    showError(e.message)
-  }
-}
+const newItem = reactive({ group_name: '', name: '', unit: '' })
 
 // Computed
 const filteredCatalog = computed(() =>
@@ -417,11 +320,10 @@ async function addCatalogItem() {
         group_name: newItem.group_name,
         name: newItem.name,
         unit: newItem.unit,
-        thickness: newItem.thickness.trim() || null,
         sort_order: maxSort + 1,
       })
     if (err) throw err
-    Object.assign(newItem, { group_name: '', name: '', unit: '', thickness: '' })
+    Object.assign(newItem, { group_name: '', name: '', unit: '' })
     await loadCatalog()
     success('Đã thêm hạng mục vào danh mục')
   } catch (e: any) {
