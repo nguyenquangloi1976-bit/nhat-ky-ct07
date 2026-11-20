@@ -18,7 +18,10 @@
         <div>
           <label class="block text-xs text-gray-500 mb-1">Hạng mục</label>
           <select v-model="itemType" class="input-sm w-full">
-            <option v-for="t in ITEM_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+            <option v-if="!catalogGroups.length" disabled>Đang tải danh mục...</option>
+            <optgroup v-for="g in catalogGroups" :key="g.group" :label="g.group">
+              <option v-for="t in g.items" :key="t.id" :value="t.name">{{ t.name }} ({{ t.unit }})</option>
+            </optgroup>
           </select>
         </div>
         <div>
@@ -108,34 +111,57 @@ const { currentProject } = useProject()
 const { getStructures } = useStructures()
 const { listLines } = useDiary()
 
-const ITEM_TYPES = [
-  { label: 'Đắp K95', value: 'K95' },
-  { label: 'Đắp K98', value: 'K98' },
-  { label: 'Xử lý nền đất yếu', value: 'XLNDY' },
-  { label: 'Đắp bù lún', value: 'BUL' },
-  { label: 'CPĐD loại I', value: 'CPDD1' },
-  { label: 'CPĐD GCXM', value: 'CPDD_GCXM' },
-  { label: 'CPĐD loại II', value: 'CPDD2' },
+// Danh mục hạng mục KL — load từ work_item_catalog (is_default = true)
+const catalogItems = ref<any[]>([])
+const catalogGroups = computed(() => {
+  const map = new Map<string, any[]>()
+  for (const item of catalogItems.value) {
+    const g = item.group_name || 'Khác'
+    if (!map.has(g)) map.set(g, [])
+    map.get(g)!.push(item)
+  }
+  return Array.from(map.entries()).map(([group, items]) => ({ group, items }))
+})
+
+// Map tên hạng mục → item_type code trong layer_sections (ĐTPL)
+const NAME_TO_DTPL_CODE: { pattern: RegExp; code: string }[] = [
+  { pattern: /k95/i, code: 'K95' },
+  { pattern: /k98/i, code: 'K98' },
+  { pattern: /xử lý nền|xlndy/i, code: 'XLNDY' },
+  { pattern: /bù lún|bul/i, code: 'BUL' },
+  { pattern: /cpđd[^,;]*loại i\b|cpdd.?loai.?i\b/i, code: 'CPDD1' },
+  { pattern: /gcxm|gia cố xi măng/i, code: 'CPDD_GCXM' },
+  { pattern: /cpđd[^,;]*loại ii\b|cpdd.?loai.?ii\b/i, code: 'CPDD2' },
+  { pattern: /btn[^,;]*hạt thô|btn.?ht\b/i, code: 'BTN_HT' },
+  { pattern: /btn[^,;]*hạt mịn|btn.?hm\b/i, code: 'BTN_HM' },
+  { pattern: /btn[^,;]*polyme|btn.?pm\b/i, code: 'BTN_PM' },
 ]
 
-const ITEM_TYPE_NAME_MAP: { itemType: string; pattern: RegExp }[] = [
-  { itemType: 'K95', pattern: /k95/i },
-  { itemType: 'K98', pattern: /k98/i },
-  { itemType: 'XLNDY', pattern: /xử lý nền|xlndy/i },
-  { itemType: 'BUL', pattern: /bù lún|bul/i },
-  { itemType: 'CPDD1', pattern: /cpđd[^,;]*loại i\b|cpdd.?loai.?i\b/i },
-  { itemType: 'CPDD_GCXM', pattern: /gcxm|gia cố xi măng/i },
-  { itemType: 'CPDD2', pattern: /cpđd[^,;]*loại ii\b|cpdd.?loai.?ii\b/i },
-]
+function nameToDtplCode(name: string): string {
+  const m = NAME_TO_DTPL_CODE.find(x => x.pattern.test(name))
+  return m ? m.code : ''
+}
 
-function nameMatchesItemType(name: string, it: string): boolean {
-  const m = ITEM_TYPE_NAME_MAP.find(x => x.itemType === it)
-  return m ? m.pattern.test(name) : false
+async function loadCatalog() {
+  // Load hạng mục mặc định cho loại công trình Đường
+  const { data } = await $supabase
+    .from('work_item_catalog')
+    .select('*')
+    .eq('type_code', 'Đường')
+    .eq('is_active', true)
+    .eq('is_default', true)
+    .order('group_name')
+    .order('sort_order')
+  catalogItems.value = data || []
+  // Auto-select hạng mục đầu tiên
+  if (catalogItems.value.length && !itemType.value) {
+    itemType.value = catalogItems.value[0].name
+  }
 }
 
 const structures = ref<any[]>([])
 const structureId = ref('')
-const itemType = ref('K95')
+const itemType = ref('')
 const sideFilter = ref('')
 const loading = ref(false)
 const generated = ref(false)
@@ -163,7 +189,10 @@ async function loadStructures() {
 }
 
 watch(() => currentProject.value?.id, (pid) => {
-  if (pid) loadStructures()
+  if (pid) {
+    loadStructures()
+    loadCatalog()
+  }
 }, { immediate: true })
 
 async function generate() {
@@ -182,7 +211,7 @@ async function generate() {
     const filtered = allLines.filter(l =>
       l.batch_number &&
       l.km_from != null &&
-      nameMatchesItemType(l.work_items?.name || '', itemType.value) &&
+      (l.work_items?.name || '') === itemType.value &&
       (!sideFilter.value || (l.side || 'T') === sideFilter.value)
     )
 
@@ -193,6 +222,12 @@ async function generate() {
     }
 
     // 2. Load ĐTPL (phân trang)
+    const dtplCode = nameToDtplCode(itemType.value)
+    if (!dtplCode) {
+      errorMsg.value = `Không tìm thấy mã ĐTPL tương ứng cho "${itemType.value}"`
+      loading.value = false
+      return
+    }
     const dtplMap: Record<string, Map<number, Map<number, number>>> = {}
     const pgSize = 1000
     let offset = 0
@@ -201,7 +236,7 @@ async function generate() {
         .from('layer_sections')
         .select('station, layer, side, area, item_type')
         .eq('project_id', pid)
-        .eq('item_type', itemType.value)
+        .eq('item_type', dtplCode)
         .range(offset, offset + pgSize - 1)
       if (error) { errorMsg.value = 'Lỗi load ĐTPL: ' + error.message; break }
       if (!data || data.length === 0) break
@@ -217,7 +252,7 @@ async function generate() {
 
     const dtplTotal = Object.values(dtplMap).reduce((s, m) => s + m.size, 0)
     if (dtplTotal === 0) {
-      errorMsg.value = `Có ${filtered.length} dòng NK khớp nhưng không có dữ liệu ĐTPL cho ${itemType.value}`
+      errorMsg.value = `Có ${filtered.length} dòng NK khớp nhưng không có dữ liệu ĐTPL cho "${itemType.value}" (mã: ${dtplCode})`
       loading.value = false
       return
     }
