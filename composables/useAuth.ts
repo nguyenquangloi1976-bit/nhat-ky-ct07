@@ -63,6 +63,7 @@ export function useAuth() {
     profile: readonly(profile),
     loading: readonly(loading),
     isAdmin: computed(() => profile.value?.role === 'admin' || profile.value?.role === 'tvgs_truong'),
+    isSuperAdmin: computed(() => profile.value?.role === 'admin'),
     init,
     signIn,
     signOut,

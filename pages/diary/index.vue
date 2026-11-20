@@ -216,13 +216,13 @@
               <div class="flex flex-wrap gap-1.5 mb-3">
                 <span v-for="g in groupList" :key="g" class="inline-flex items-center gap-0.5">
                   <button @click="selectedGroup = g"
-                    :class="['px-2.5 py-1 border text-sm transition', isAdmin && g !== 'Khác' ? 'rounded-l' : 'rounded',
-                      isAdmin && g !== 'Khác' ? 'border-r-0' : '',
+                    :class="['px-2.5 py-1 border text-sm transition', isSuperAdmin && g !== 'Khác' ? 'rounded-l' : 'rounded',
+                      isSuperAdmin && g !== 'Khác' ? 'border-r-0' : '',
                       selectedGroup === g ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400',
                       groupsWithLines.has(g) && selectedGroup !== g ? 'ring-1 ring-yellow-400' : '']">
                     {{ g }}
                   </button>
-                  <button v-if="isAdmin && g !== 'Khác'" @click.stop="deleteGroup(g)" :title="'Xóa bộ phận ' + g"
+                  <button v-if="isSuperAdmin && g !== 'Khác'" @click.stop="deleteGroup(g)" :title="'Xóa bộ phận ' + g"
                     :class="['px-1 py-1 rounded-r border border-l-0 text-sm transition',
                       selectedGroup === g ? 'bg-primary-600 text-primary-200 border-primary-600 hover:text-white' : 'bg-white text-gray-400 border-gray-300 hover:text-red-500 hover:border-red-400']">
                     ×
@@ -550,7 +550,7 @@ const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addW
 const { getOrCreateEntry, saveLine, deleteLine, updateEntry, lockEntry, unlockEntry } = useDiary()
 const { calcVolume, calcCumulativeVolume } = useLayerVolume()
 const { currentProject } = useProject()
-const { isAdmin } = useAuth()
+const { isAdmin, isSuperAdmin } = useAuth()
 const { success, error: showError } = useToast()
 
 // --- State ---
