@@ -988,6 +988,7 @@ async function loadCatalogItems() {
       .select('*')
       .eq('type_code', currentType.code)
       .eq('is_active', true)
+      .eq('is_default', true)
       .order('sort_order')
     if (error) throw error
     catalogItems.value = data || []
