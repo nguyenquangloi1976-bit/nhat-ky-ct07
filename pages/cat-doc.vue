@@ -289,13 +289,13 @@ function getMaxLayerForRange(itemType: string, side: string | null, kmFrom: numb
     if (!arr || arr.length === 0) continue
     let maxL = 0
     for (const s of arr) {
-      if (s.station >= kmFrom - 500 && s.station <= kmTo + 500) {
+      if (s.station >= kmFrom && s.station <= kmTo) {
         if (s.maxLayer > maxL) maxL = s.maxLayer
       }
     }
     if (maxL > 0) return maxL
   }
-  return 0
+  return 0  // không có cọc ĐTPL trong đoạn → không xác nhận
 }
 
 function liftCount(name: string) {
@@ -363,9 +363,9 @@ function buildRows(side: 'T' | 'P' | null) {
             const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
             const maxInRange = getMaxLayerForRange(itemType, side, Math.min(a0, b0), Math.max(a0, b0))
             if (maxInRange > 0) return lift <= maxInRange  // ĐTPL có → giới hạn theo ĐTPL
-            return true  // ĐTPL chưa có dữ liệu → giữ hành vi cũ (tô hết)
+            return false  // ĐTPL chưa có dữ liệu → không mở rộng
           }
-          return true  // không xác định item_type → giữ hành vi cũ
+          return false  // không xác định item_type → không mở rộng
         })
         .map(l => {
           const a0 = Number(l.km_from)
