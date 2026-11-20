@@ -3,6 +3,7 @@ export interface SubmissionDoc {
   project_id: string
   group_code: 'A' | 'B' | 'C' | 'D'
   sort_order: number
+  sub_category: string | null
   doc_name: string
   doc_number: string | null
   submitted_date: string | null
