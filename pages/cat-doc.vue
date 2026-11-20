@@ -255,11 +255,23 @@ function _itemTypeForName(name: string): string | null {
 async function loadDtplLayerCounts() {
   const pid = currentProject.value?.id
   if (!pid) return
-  const { data, error } = await $supabase
-    .from('layer_sections')
-    .select('item_type, layer, side, station')
-    .eq('project_id', pid)
-  if (error || !data) return
+  // Phân trang để lấy hết dữ liệu (Supabase giới hạn 1000 dòng/lần)
+  const allData: any[] = []
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await $supabase
+      .from('layer_sections')
+      .select('item_type, layer, side, station')
+      .eq('project_id', pid)
+      .range(from, from + pageSize - 1)
+    if (error || !data || data.length === 0) break
+    allData.push(...data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+  if (allData.length === 0) return
+  const data = allData
   const maxByType: Record<string, number> = {}
   const stationMap: Record<string, Map<number, number>> = {}
   for (const row of data) {
