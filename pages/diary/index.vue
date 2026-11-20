@@ -224,6 +224,12 @@
                   class="px-2.5 py-1 rounded border border-dashed border-primary-400 text-sm text-primary-600 hover:bg-primary-50">
                   + Bộ phận mới
                 </button>
+                <button v-if="selectedGroup && selectedGroup !== 'Khác'"
+                  @click="deleteGroup(selectedGroup)"
+                  title="Xóa bộ phận đang chọn"
+                  class="px-2.5 py-1 rounded border border-dashed border-red-400 text-sm text-red-600 hover:bg-red-50">
+                  Xóa
+                </button>
               </div>
               <template v-if="selectedGroup">
                 <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
@@ -538,7 +544,7 @@
 definePageMeta({ middleware: 'auth' })
 
 const { $supabase } = useNuxtApp()
-const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure, updateWorkItem } = useStructures()
+const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure, updateWorkItem, deleteWorkItem } = useStructures()
 const { getOrCreateEntry, saveLine, deleteLine, updateEntry, lockEntry, unlockEntry } = useDiary()
 const { calcVolume, calcCumulativeVolume } = useLayerVolume()
 const { currentProject } = useProject()
@@ -1283,6 +1289,29 @@ function openAddInGroup(group: string) {
     design_quantity: null,
   })
   showAddModal.value = true
+}
+
+async function deleteGroup(group: string) {
+  if (!group || group === 'Khác') return
+  const items = workItems.value.filter(w => (w.group_name || 'Khác') === group)
+  if (!items.length) return
+  const usedIds = new Set(lines.value.map(l => l.work_item_id))
+  const hasData = items.some(w => usedIds.has(w.id))
+  const msg = hasData
+    ? `Bộ phận "${group}" có ${items.length} hạng mục, trong đó có hạng mục đã ghi nhật ký. Xóa sẽ mất dữ liệu. Tiếp tục?`
+    : `Xóa bộ phận "${group}" (${items.length} hạng mục)?`
+  if (!confirm(msg)) return
+  try {
+    for (const w of items) {
+      await deleteWorkItem(w.id)
+    }
+    workItems.value = workItems.value.filter(w => (w.group_name || 'Khác') !== group)
+    lines.value = lines.value.filter(l => !items.some(w => w.id === l.work_item_id))
+    if (selectedGroup.value === group) selectedGroup.value = ''
+    success(`Đã xóa bộ phận "${group}"`)
+  } catch (e: any) {
+    showError(e.message)
+  }
 }
 
 function openAddWorkItem() {
