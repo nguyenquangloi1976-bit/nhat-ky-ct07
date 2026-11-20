@@ -146,18 +146,15 @@
                     <!-- Lý trình (chỉ công trình theo tuyến) -->
                     <td v-if="isLinear" class="px-2 py-1.5 text-center">
                       <template v-if="entry?.is_locked">{{ row.line.km_from_text }}</template>
-                      <input v-else v-model="row.line.km_from_text" @blur="normalizeKm(row.line, 'km_from_text'); autoCalcK95(row); checkOverlap(row)"
+                      <input v-else v-model="row.line.km_from_text" @blur="normalizeKm(row.line, 'km_from_text'); autoCalcK95(row)"
                         :class="['input-xs w-24 text-center', kmInvalid(row.line.km_from_text) ? 'border-red-500 bg-red-50' : '']"
                         placeholder="Km60+100" />
                     </td>
                     <td v-if="isLinear" class="px-2 py-1.5 text-center">
                       <template v-if="entry?.is_locked">{{ row.line.km_to_text }}</template>
-                      <input v-else v-model="row.line.km_to_text" @blur="normalizeKm(row.line, 'km_to_text'); autoCalcK95(row); checkOverlap(row)"
+                      <input v-else v-model="row.line.km_to_text" @blur="normalizeKm(row.line, 'km_to_text'); autoCalcK95(row)"
                         :class="['input-xs w-24 text-center', kmInvalid(row.line.km_to_text) ? 'border-red-500 bg-red-50' : '']"
                         placeholder="Km60+300" />
-                      <div v-if="row.line._overlapWarning" class="text-xs text-red-500 mt-0.5 whitespace-nowrap">
-                        ⚠️ {{ row.line._overlapWarning }}
-                      </div>
                     </td>
                     <!-- Khối lượng -->
                     <td class="px-2 py-1.5 text-center relative">
@@ -214,20 +211,12 @@
             <div v-if="!entry?.is_locked" ref="pickerSection" class="p-3 border-t">
               <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">1. Chọn bộ phận</div>
               <div class="flex flex-wrap gap-1.5 mb-3">
-                <span v-for="g in groupList" :key="g" class="inline-flex items-center gap-0.5">
-                  <button @click="selectedGroup = g"
-                    :class="['px-2.5 py-1 border text-sm transition', isSuperAdmin && g !== 'Khác' ? 'rounded-l' : 'rounded',
-                      isSuperAdmin && g !== 'Khác' ? 'border-r-0' : '',
-                      selectedGroup === g ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400',
-                      groupsWithLines.has(g) && selectedGroup !== g ? 'ring-1 ring-yellow-400' : '']">
-                    {{ g }}
-                  </button>
-                  <button v-if="isSuperAdmin && g !== 'Khác'" @click.stop="deleteGroup(g)" :title="'Xóa bộ phận ' + g"
-                    :class="['px-1 py-1 rounded-r border border-l-0 text-sm transition',
-                      selectedGroup === g ? 'bg-primary-600 text-primary-200 border-primary-600 hover:text-white' : 'bg-white text-gray-400 border-gray-300 hover:text-red-500 hover:border-red-400']">
-                    ×
-                  </button>
-                </span>
+                <button v-for="g in groupList" :key="g" @click="selectedGroup = g"
+                  :class="['px-2.5 py-1 rounded border text-sm transition',
+                    selectedGroup === g ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400',
+                    groupsWithLines.has(g) && selectedGroup !== g ? 'ring-1 ring-yellow-400' : '']">
+                  {{ g }}
+                </button>
                 <button @click="openAddInGroup('')" title="Thêm một bộ phận mới cùng hạng mục đầu tiên của nó"
                   class="px-2.5 py-1 rounded border border-dashed border-primary-400 text-sm text-primary-600 hover:bg-primary-50">
                   + Bộ phận mới
@@ -448,50 +437,25 @@
           </button>
         </div>
 
-        <!-- Số dầm (chỉ hiện ở tab Đúc dầm) -->
-        <div v-if="designQtyTab === 'Đúc dầm'" class="flex items-center gap-3 mb-3 p-2 bg-amber-50 rounded-lg">
-          <label class="text-sm text-gray-700 font-medium whitespace-nowrap">Số dầm:</label>
-          <input v-model.number="girderCount" type="number" min="1" step="1"
-            class="input-field w-20 text-center text-sm" />
-          <span class="text-xs text-gray-500">KL thiết kế = KL/1 dầm × {{ girderCount || 0 }} dầm</span>
-        </div>
-
         <!-- Bảng hạng mục -->
         <table class="w-full text-sm border-collapse">
           <thead>
             <tr class="bg-gray-50 text-gray-600">
               <th class="text-left px-2 py-1.5 font-medium">Hạng mục</th>
               <th class="text-center px-2 py-1.5 font-medium w-16">ĐV</th>
-              <th v-if="designQtyTab === 'Đúc dầm'" class="text-center px-2 py-1.5 font-medium w-28">KL/1 dầm</th>
-              <th class="text-center px-2 py-1.5 font-medium w-28">
-                {{ designQtyTab === 'Đúc dầm' ? 'Tổng' : 'KL thiết kế' }}
-              </th>
+              <th class="text-center px-2 py-1.5 font-medium w-32">KL thiết kế</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in designQtyItems" :key="item.id" class="border-b border-gray-100">
               <td class="px-2 py-1.5 text-gray-700">{{ item.name }}</td>
               <td class="px-2 py-1.5 text-center text-gray-500">{{ item.unit }}</td>
-              <!-- Chế độ Đúc dầm: nhập KL/1 dầm, tự tính tổng -->
-              <td v-if="designQtyTab === 'Đúc dầm'" class="px-2 py-1.5">
-                <input v-model.number="girderPerUnit[item.id]"
-                  type="number" min="0"
-                  class="input-field w-full text-center text-sm"
-                  :step="isIntegerUnit(item.unit) || item.unit === 'dầm' || item.unit === 'sợi' || item.unit === 'bộ' || item.unit === 'ngày' ? 1 : 0.01"
-                  @input="designQtyValues[item.id] = Math.round(((girderPerUnit[item.id] || 0) * (girderCount || 0)) * 100) / 100" />
-              </td>
               <td class="px-2 py-1.5">
-                <template v-if="designQtyTab === 'Đúc dầm'">
-                  <span class="block text-center text-gray-600 font-medium">
-                    {{ designQtyValues[item.id] ? Number(designQtyValues[item.id]).toLocaleString('vi-VN') : '—' }}
-                  </span>
-                </template>
-                <template v-else>
-                  <input v-model.number="designQtyValues[item.id]"
-                    type="number" min="0"
-                    class="input-field w-full text-center text-sm"
-                    :step="isIntegerUnit(item.unit) || item.unit === 'dầm' || item.unit === 'sợi' || item.unit === 'bộ' || item.unit === 'ngày' ? 1 : 0.01" />
-                </template>
+                <input v-model.number="designQtyValues[item.id]"
+                  type="number" step="0.01" min="0"
+                  class="input-field w-full text-center text-sm"
+                  :placeholder="item.unit === 'cọc' || item.unit === 'dầm' || item.unit === 'sợi' || item.unit === 'bộ' || item.unit === 'ngày' ? '0' : '0.00'"
+                  :step="isIntegerUnit(item.unit) || item.unit === 'dầm' || item.unit === 'sợi' || item.unit === 'bộ' || item.unit === 'ngày' ? 1 : 0.01" />
               </td>
             </tr>
           </tbody>
@@ -546,11 +510,11 @@
 definePageMeta({ middleware: 'auth' })
 
 const { $supabase } = useNuxtApp()
-const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure, updateWorkItem, deleteWorkItem } = useStructures()
+const { getTypes, getStructures, getWorkItems, addWorkItem: createWorkItem, addWorkItems, addStructure, updateStructure, updateWorkItem } = useStructures()
 const { getOrCreateEntry, saveLine, deleteLine, updateEntry, lockEntry, unlockEntry } = useDiary()
-const { calcVolume, calcCumulativeVolume } = useLayerVolume()
+const { calcVolume } = useLayerVolume()
 const { currentProject } = useProject()
-const { isAdmin, isSuperAdmin } = useAuth()
+const { isAdmin } = useAuth()
 const { success, error: showError } = useToast()
 
 // --- State ---
@@ -723,9 +687,6 @@ const showDesignQtyModal = ref(false)
 const savingDesignQty = ref(false)
 const designQtyTab = ref('')
 const designQtyValues = reactive<Record<string, number | null>>({})
-// Đúc dầm: nhập KL/1 dầm → tổng = per × count
-const girderCount = ref(0)
-const girderPerUnit = reactive<Record<string, number | null>>({})
 
 const designQtyGroups = computed(() => {
   const groups: string[] = []
@@ -744,18 +705,6 @@ function openDesignQty() {
   // Populate current design_quantity values
   for (const w of workItems.value) {
     designQtyValues[w.id] = w.design_quantity ?? null
-  }
-  // Lấy số dầm từ metadata hoặc từ số nhịp
-  const st = allStructures.value.find(s => s.id === selectedStructureId.value)
-  const meta = st?.metadata?.bridge
-  girderCount.value = meta?.girder_count ?? meta?.spans ?? 0
-  // Tính ngược KL/1 dầm từ design_quantity hiện tại
-  const girderItems = workItems.value.filter(w => w.group_name === 'Đúc dầm')
-  for (const w of girderItems) {
-    const total = w.design_quantity ?? 0
-    girderPerUnit[w.id] = girderCount.value > 0 && total > 0
-      ? Math.round((total / girderCount.value) * 100) / 100
-      : null
   }
   designQtyTab.value = designQtyGroups.value[0] || ''
   showDesignQtyModal.value = true
@@ -776,13 +725,6 @@ async function saveDesignQty() {
         w.design_quantity = nv
         count++
       }
-    }
-    // Lưu số dầm vào metadata
-    if (girderCount.value > 0 && selectedStructureId.value) {
-      const st = allStructures.value.find(s => s.id === selectedStructureId.value)
-      const meta = { ...(st?.metadata || {}), bridge: { ...(st?.metadata?.bridge || {}), girder_count: girderCount.value } }
-      await updateStructure(selectedStructureId.value, { metadata: meta } as any)
-      if (st) st.metadata = meta
     }
     showDesignQtyModal.value = false
     success(count > 0 ? `Đã cập nhật ${count} hạng mục` : 'Không có thay đổi')
@@ -870,68 +812,6 @@ async function autoCalcK95(row: any) {
       console.warn('Auto-calc K95 failed:', e)
     }
   }, 400))
-}
-
-
-// --- Overlap detection ---
-async function checkOverlap(row: any) {
-  const item = row.item || findItemForLine(row.line)
-  if (!item) return
-  const line = row.line
-
-  const kmFrom = parseKm(line.km_from_text)
-  const kmTo = parseKm(line.km_to_text)
-  if (kmFrom === null || kmTo === null || kmFrom === kmTo) {
-    line._overlapWarning = ''
-    return
-  }
-  const lo = Math.min(kmFrom, kmTo)
-  const hi = Math.max(kmFrom, kmTo)
-
-  // Query existing lines for same work_item, same side, same batch
-  try {
-    let query = $supabase
-      .from('diary_lines')
-      .select('id, km_from, km_to, batch_number, diary_entries!inner(entry_date, structure_id)')
-      .eq('work_item_id', line.work_item_id)
-      .not('km_from', 'is', null)
-
-    if (currentProject.value) {
-      query = query.eq('diary_entries.project_id', currentProject.value.id)
-    }
-    if (line.side) query = query.eq('side', line.side)
-    if (line.batch_number) query = query.eq('batch_number', line.batch_number)
-    // Exclude self
-    if (line.id) query = query.neq('id', line.id)
-
-    const { data: existing } = await query
-    if (!existing || existing.length === 0) {
-      line._overlapWarning = ''
-      return
-    }
-
-    // Check overlap
-    const overlaps: string[] = []
-    for (const ex of existing) {
-      const exLo = Math.min(Number(ex.km_from), Number(ex.km_to))
-      const exHi = Math.max(Number(ex.km_from), Number(ex.km_to))
-      if (exLo < hi && exHi > lo) {
-        // Overlap detected
-        const overlapStart = Math.max(lo, exLo)
-        const overlapEnd = Math.min(hi, exHi)
-        const date = ex.diary_entries?.entry_date || '?'
-        overlaps.push(`${formatKm(overlapStart)}→${formatKm(overlapEnd)} (${date})`)
-      }
-    }
-
-    if (overlaps.length > 0) {
-      line._overlapWarning = `Trùng lý trình: ${overlaps.join('; ')}`
-    } else {
-      line._overlapWarning = ''
-    }
-  } catch (e) {
-    console.warn('Overlap check failed:', e)
-  }
 }
 
 // Suggestions for search dropdown
@@ -1291,29 +1171,6 @@ function openAddInGroup(group: string) {
     design_quantity: null,
   })
   showAddModal.value = true
-}
-
-async function deleteGroup(group: string) {
-  if (!group || group === 'Khác') return
-  const items = workItems.value.filter(w => (w.group_name || 'Khác') === group)
-  if (!items.length) return
-  const usedIds = new Set(lines.value.map(l => l.work_item_id))
-  const hasData = items.some(w => usedIds.has(w.id))
-  const msg = hasData
-    ? `Bộ phận "${group}" có ${items.length} hạng mục, trong đó có hạng mục đã ghi nhật ký. Xóa sẽ mất dữ liệu. Tiếp tục?`
-    : `Xóa bộ phận "${group}" (${items.length} hạng mục)?`
-  if (!confirm(msg)) return
-  try {
-    for (const w of items) {
-      await deleteWorkItem(w.id)
-    }
-    workItems.value = workItems.value.filter(w => (w.group_name || 'Khác') !== group)
-    lines.value = lines.value.filter(l => !items.some(w => w.id === l.work_item_id))
-    if (selectedGroup.value === group) selectedGroup.value = ''
-    success(`Đã xóa bộ phận "${group}"`)
-  } catch (e: any) {
-    showError(e.message)
-  }
 }
 
 function openAddWorkItem() {
