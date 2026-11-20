@@ -310,6 +310,35 @@ function getMaxLayerForRange(itemType: string, side: string | null, kmFrom: numb
   return 0  // không có cọc ĐTPL trong đoạn → không xác nhận
 }
 
+// Tìm các đoạn con trong [kmFrom, kmTo] mà ĐTPL xác nhận có lớp >= targetLayer
+function getSubRangesForLayer(itemType: string, side: string | null, kmFrom: number, kmTo: number, targetLayer: number): { a: number; b: number }[] {
+  const keys = side ? [`${itemType}:${side}`, itemType] : [itemType]
+  for (const key of keys) {
+    const arr = dtplStationMaxLayer.value[key]
+    if (!arr || arr.length === 0) continue
+    const inRange = arr.filter(s => s.station >= kmFrom && s.station <= kmTo)
+    if (inRange.length === 0) continue
+    // Mỗi station chiếm nửa khoảng cách đến station kề bên
+    const ranges: { a: number; b: number }[] = []
+    for (let i = 0; i < inRange.length; i++) {
+      if (inRange[i].maxLayer < targetLayer) continue
+      const pos = arr.indexOf(inRange[i])
+      const prev = pos > 0 ? arr[pos - 1].station : kmFrom
+      const next = pos < arr.length - 1 ? arr[pos + 1].station : kmTo
+      const lo = Math.max(kmFrom, Math.round((prev + inRange[i].station) / 2))
+      const hi = Math.min(kmTo, Math.round((inRange[i].station + next) / 2))
+      // Ghép đoạn liền kề
+      if (ranges.length > 0 && lo <= ranges[ranges.length - 1].b + 20) {
+        ranges[ranges.length - 1].b = hi
+      } else {
+        ranges.push({ a: lo, b: hi })
+      }
+    }
+    if (ranges.length > 0) return ranges
+  }
+  return []
+}
+
 function liftCount(name: string) {
   const userCfg = liftCfg.value[name]
   if (userCfg === 0) return 0  // user tắt hẳn
@@ -364,35 +393,33 @@ function buildRows(side: 'T' | 'P' | null) {
     // Ghi lớp X → đã đắp từ đáy (N) lên đến lớp X → tô lớp X→N
     for (let lift = 1; lift <= count; lift++) {
       const segs = mine
-        .filter(l => {
-          if (count === 1) return true
-          const bn = Number(l.batch_number) || count
-          if (lift < bn) return false  // lớp trên lớp đã ghi → chưa đắp
-          if (lift === bn) return true  // đúng lớp đã ghi → luôn hiện
-          // lift > bn: lớp dưới lớp đã ghi → chỉ tô nếu ĐTPL xác nhận đoạn có lớp đó
-          if (itemType) {
-            const a0 = Number(l.km_from)
-            const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
-            const maxInRange = getMaxLayerForRange(itemType, side, Math.min(a0, b0), Math.max(a0, b0))
-            if (maxInRange > 0) return lift <= maxInRange  // ĐTPL có → giới hạn theo ĐTPL
-            return false  // ĐTPL chưa có dữ liệu → không mở rộng
-          }
-          return false  // không xác định item_type → không mở rộng
-        })
-        .map(l => {
+        .flatMap(l => {
           const a0 = Number(l.km_from)
           const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
-          const a = Math.max(start, Math.min(a0, b0))
-          const b = Math.min(end, Math.max(a0, b0))
+          const lo = Math.min(a0, b0), hi = Math.max(a0, b0)
           const e = l.diary_entries || {}
-          const lineLift = Number(l.batch_number) || 1
-          return {
-            id: l.id, a, b,
+          const bn = Number(l.batch_number) || count
+          const lineLift = bn
+
+          // Helper tạo segment
+          const mkSeg = (segA: number, segB: number, showKL: boolean) => ({
+            id: l.id, a: Math.max(start, segA), b: Math.min(end, segB),
             title: `${def.name}${count > 1 ? ' – lớp ' + lift : ''}` +
               (lineLift !== lift ? ` (đắp đến lớp ${lineLift})` : '') +
-              `\n${fmtDate(e.entry_date)} · ${formatKm(a0)} – ${formatKm(b0)}` +
-              `\nKL: ${l.quantity} ${l.work_items?.unit || ''}${l.notes ? '\n' + l.notes : ''}`,
+              `\n${fmtDate(e.entry_date)} · ${formatKm(segA)} – ${formatKm(segB)}` +
+              (showKL ? `\nKL: ${l.quantity} ${l.work_items?.unit || ''}` : '') +
+              (l.notes ? '\n' + l.notes : ''),
+          })
+
+          if (count === 1) return [mkSeg(lo, hi, true)]
+          if (lift < bn) return []  // lớp trên lớp đã ghi → chưa đắp
+          if (lift === bn) return [mkSeg(lo, hi, true)]  // đúng lớp đã ghi → hiện lý trình nhật ký
+          // lift > bn: lớp dưới → tạo sub-segment theo lý trình ĐTPL
+          if (itemType) {
+            const subRanges = getSubRangesForLayer(itemType, side, lo, hi, lift)
+            return subRanges.map(r => mkSeg(r.a, r.b, false))
           }
+          return []
         })
         .filter(sg => sg.b >= sg.a && sg.a <= end && sg.b >= start)
       rows.push({
