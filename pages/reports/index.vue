@@ -1,6 +1,12 @@
 <template>
   <div>
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Báo cáo tổng hợp</h1>
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">Báo cáo tổng hợp</h1>
+      <NuxtLink to="/reports/khoi-luong-lop" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        KL theo lớp (ĐTPL)
+      </NuxtLink>
+    </div>
 
     <!-- Filters -->
     <div class="bg-white rounded-lg shadow-sm border p-4 mb-4">
