@@ -227,6 +227,8 @@ const layerDefs = computed(() => {
 
 // Max layer count từ ĐTPL (layer_sections) cho mỗi item_type → tên hạng mục
 const dtplLayerCounts = ref<Record<string, number>>({})
+// Station-level max layer: key = "itemType:side", value = sorted array of {station, maxLayer}
+const dtplStationMaxLayer = ref<Record<string, { station: number; maxLayer: number }[]>>({})
 
 // Map item_type → regex khớp tên hạng mục (ngược lại ITEM_TYPE_MAP trong reports)
 const ITEM_TYPE_NAME_MAP: { itemType: string; pattern: RegExp }[] = [
@@ -253,25 +255,57 @@ function _itemTypeForName(name: string): string | null {
 async function loadDtplLayerCounts() {
   const pid = currentProject.value?.id
   if (!pid) return
-  // Query max layer per item_type from layer_sections
   const { data, error } = await $supabase
     .from('layer_sections')
-    .select('item_type, layer')
+    .select('item_type, layer, side, station')
     .eq('project_id', pid)
   if (error || !data) return
   const maxByType: Record<string, number> = {}
+  const stationMap: Record<string, Map<number, number>> = {}
   for (const row of data) {
     const t = row.item_type || 'K95'
     if (!maxByType[t] || row.layer > maxByType[t]) maxByType[t] = row.layer
+    // Station-level: key = itemType:side hoặc itemType (nếu không có side)
+    const sideKey = row.side ? `${t}:${row.side}` : t
+    if (!stationMap[sideKey]) stationMap[sideKey] = new Map()
+    const cur = stationMap[sideKey].get(row.station) || 0
+    if (row.layer > cur) stationMap[sideKey].set(row.station, row.layer)
   }
   dtplLayerCounts.value = maxByType
+  const result: Record<string, { station: number; maxLayer: number }[]> = {}
+  for (const [key, map] of Object.entries(stationMap)) {
+    result[key] = Array.from(map.entries())
+      .map(([station, maxLayer]) => ({ station, maxLayer }))
+      .sort((a, b) => a.station - b.station)
+  }
+  dtplStationMaxLayer.value = result
+}
+
+// Tìm max layer ĐTPL trong đoạn [kmFrom, kmTo] (mở rộng 500m hai bên)
+function getMaxLayerForRange(itemType: string, side: string | null, kmFrom: number, kmTo: number): number {
+  const keys = side ? [`${itemType}:${side}`, itemType] : [itemType]
+  for (const key of keys) {
+    const arr = dtplStationMaxLayer.value[key]
+    if (!arr || arr.length === 0) continue
+    let maxL = 0
+    for (const s of arr) {
+      if (s.station >= kmFrom - 500 && s.station <= kmTo + 500) {
+        if (s.maxLayer > maxL) maxL = s.maxLayer
+      }
+    }
+    if (maxL > 0) return maxL
+  }
+  return 0
 }
 
 function liftCount(name: string) {
-  // Ưu tiên: user config > ĐTPL max layer > default 1
-  if (liftCfg.value[name] !== undefined) return liftCfg.value[name]
+  const userCfg = liftCfg.value[name]
+  if (userCfg === 0) return 0  // user tắt hẳn
   const itemType = _itemTypeForName(name)
-  if (itemType && dtplLayerCounts.value[itemType]) return dtplLayerCounts.value[itemType]
+  const dtpl = itemType ? (dtplLayerCounts.value[itemType] || 0) : 0
+  // Lấy max giữa ĐTPL và userCfg để hiển thị đủ hàng
+  if (dtpl > 0) return userCfg !== undefined ? Math.max(dtpl, userCfg) : dtpl
+  if (userCfg !== undefined) return userCfg
   return 1
 }
 function setLiftCount(name: string, n: number) {
@@ -310,21 +344,28 @@ function buildRows(side: 'T' | 'P' | null) {
     const mine = stationLines.value.filter(l =>
       l.work_items?.name === def.name && (side === null || !l.side || l.side === side))
     const maxBatch = mine.reduce((m, l) => Math.max(m, Number(l.batch_number) || 0), 0)
+    const itemType = _itemTypeForName(def.name)
     const cfg = liftCount(def.name)
     if (cfg === 0) continue
     const count = Math.max(cfg, cfg > 1 || maxBatch > 1 ? maxBatch : 1)
-    // Lớp 1 = trên cùng (tiếp giáp móng mặt đường), lớp N = đáy (đắp đầu tiên)
-    // Duyệt 1→N để lớp 1 hiển thị ở trên, lớp N ở dưới
-    // Ghi lớp X → đã đắp từ đáy (N) lên đến lớp X → tô lớp X, X+1, ..., N
-    // Lớp `lift` được tô nếu có diary line có batch_number ≤ lift (line ở lớp cao hơn → đã qua lift)
+    // Lớp 1 = trên cùng, lớp N = đáy (đắp đầu tiên)
+    // Ghi lớp X → đã đắp từ đáy (N) lên đến lớp X → tô lớp X→N
     for (let lift = 1; lift <= count; lift++) {
       const segs = mine
         .filter(l => {
           if (count === 1) return true
           const bn = Number(l.batch_number) || count
-          // bn là lớp cao nhất đã đắp đến → các lớp từ bn đến N (đáy) đã xong
-          // lift >= bn nghĩa là lift nằm trong vùng đã đắp (từ bn đến N)
-          return lift >= bn
+          if (lift < bn) return false  // lớp trên lớp đã ghi → chưa đắp
+          if (lift === bn) return true  // đúng lớp đã ghi → luôn hiện
+          // lift > bn: lớp dưới lớp đã ghi → chỉ tô nếu ĐTPL xác nhận đoạn có lớp đó
+          if (itemType) {
+            const a0 = Number(l.km_from)
+            const b0 = l.km_to === null || l.km_to === undefined ? a0 : Number(l.km_to)
+            const maxInRange = getMaxLayerForRange(itemType, side, Math.min(a0, b0), Math.max(a0, b0))
+            if (maxInRange > 0) return lift <= maxInRange  // ĐTPL có → giới hạn theo ĐTPL
+            return true  // ĐTPL chưa có dữ liệu → giữ hành vi cũ (tô hết)
+          }
+          return true  // không xác định item_type → giữ hành vi cũ
         })
         .map(l => {
           const a0 = Number(l.km_from)
