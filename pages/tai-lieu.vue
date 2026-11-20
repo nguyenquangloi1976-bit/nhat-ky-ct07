@@ -268,7 +268,7 @@ function onFileSelect(e: Event) {
 
 async function doUpload() {
   if (!selectedFile.value) return
-  const url = await uploadFile(selectedFile.value)
+  const url = await uploadFile(selectedFile.value, driveFolderId())
   if (url) {
     form.value.file_url = url
     selectedFile.value = null
@@ -444,6 +444,14 @@ async function confirmDelete(doc: any) {
 }
 
 const { currentProject } = useProject()
+// Extract Google Drive folder ID from URL
+function driveFolderId(): string | undefined {
+  const url = currentProject.value?.drive_folder_url
+  if (!url) return undefined
+  const m = url.match(/folders\/([a-zA-Z0-9_-]+)/)
+  return m ? m[1] : undefined
+}
+
 
 onMounted(() => loadDocs())
 
