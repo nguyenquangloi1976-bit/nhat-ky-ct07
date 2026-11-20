@@ -142,16 +142,15 @@ function nameToDtplCode(name: string): string {
   return m ? m.code : ''
 }
 
-async function loadCatalog() {
-  // Load hạng mục mặc định cho loại công trình Đường
-  const { data } = await $supabase
+async function loadCatalog(typeCode?: string) {
+  // Load hạng mục mặc định — theo type_code của công trình đang chọn (hoặc tất cả)
+  let query = $supabase
     .from('work_item_catalog')
     .select('*')
-    .eq('type_code', 'Đường')
     .eq('is_active', true)
     .eq('is_default', true)
-    .order('group_name')
-    .order('sort_order')
+  if (typeCode) query = query.eq('type_code', typeCode)
+  const { data } = await query.order('group_name').order('sort_order')
   catalogItems.value = data || []
   // Auto-select hạng mục đầu tiên
   if (catalogItems.value.length && !itemType.value) {
@@ -194,6 +193,14 @@ watch(() => currentProject.value?.id, (pid) => {
     loadCatalog()
   }
 }, { immediate: true })
+
+// Khi chọn công trình khác → reload catalog theo type_code của công trình đó
+watch(structureId, (sid) => {
+  if (!sid) return
+  const st = structures.value.find(s => s.id === sid)
+  const typeCode = st?.structure_types?.code || st?.structure_types?.name || ''
+  if (typeCode) loadCatalog(typeCode)
+})
 
 async function generate() {
   const pid = currentProject.value?.id
