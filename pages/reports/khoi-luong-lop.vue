@@ -11,9 +11,8 @@
         <div>
           <label class="block text-xs text-gray-500 mb-1">Công trình</label>
           <select v-model="structureId" class="input-sm w-full">
-            <optgroup v-for="g in structureGroups" :key="g.id" :label="g.name">
-              <option v-for="s in g.items" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </optgroup>
+            <option value="" disabled>-- Chọn --</option>
+            <option v-for="s in structures" :key="s.id" :value="s.id">{{ s.name }}</option>
           </select>
         </div>
         <div>
@@ -31,7 +30,7 @@
           </select>
         </div>
         <div class="flex items-end">
-          <button @click="generate" :disabled="loading"
+          <button @click="generate" :disabled="loading || !structureId"
             class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium disabled:opacity-50 w-full">
             {{ loading ? 'Đang tính...' : 'Tạo thống kê' }}
           </button>
@@ -105,6 +104,7 @@ definePageMeta({ middleware: 'auth' })
 
 const { $supabase } = useNuxtApp()
 const { currentProject } = useProject()
+const { getStructures } = useStructures()
 
 const ITEM_TYPES = [
   { label: 'Đắp K95', value: 'K95' },
@@ -116,7 +116,6 @@ const ITEM_TYPES = [
   { label: 'CPĐD loại II', value: 'CPDD2' },
 ]
 
-// Map item_type → regex cho tên hạng mục
 const ITEM_TYPE_NAME_MAP: { itemType: string; pattern: RegExp }[] = [
   { itemType: 'K95', pattern: /k95/i },
   { itemType: 'K98', pattern: /k98/i },
@@ -132,19 +131,7 @@ function nameMatchesItemType(name: string, it: string): boolean {
   return m ? m.pattern.test(name) : false
 }
 
-// --- Structures ---
 const structures = ref<any[]>([])
-const structureGroups = computed(() => {
-  const map = new Map<string, { id: string; name: string; items: any[] }>()
-  for (const s of structures.value) {
-    const t = s.structure_types || {}
-    const tid = t.id || 'other'
-    if (!map.has(tid)) map.set(tid, { id: tid, name: t.name || 'Khác', items: [] })
-    map.get(tid)!.items.push(s)
-  }
-  return Array.from(map.values())
-})
-
 const structureId = ref('')
 const itemType = ref('K95')
 const sideFilter = ref('')
@@ -160,18 +147,22 @@ interface ResultRow {
 const result = ref<ResultRow[]>([])
 const totalVol = computed(() => result.value.reduce((s, r) => s + (r.volNum || 0), 0))
 
-// Load structures
-onMounted(async () => {
-  const pid = currentProject.value?.id
-  if (!pid) return
-  const { data } = await $supabase
-    .from('structures')
-    .select('id, name, km_range, structure_types(id, name)')
-    .eq('project_id', pid)
-    .order('sort_order')
-  if (data) structures.value = data
-  if (data?.length) structureId.value = data[0].id
-})
+async function loadStructures() {
+  try {
+    structures.value = await getStructures()
+    // Tự chọn công trình đường nếu có
+    const road = structures.value.find(s => s.structure_types?.name === 'Đường')
+    if (road) structureId.value = road.id
+    else if (structures.value.length) structureId.value = structures.value[0].id
+  } catch (e) {
+    console.error('Load structures error:', e)
+  }
+}
+
+// Watch currentProject thay đổi
+watch(() => currentProject.value?.id, (pid) => {
+  if (pid) loadStructures()
+}, { immediate: true })
 
 async function generate() {
   const pid = currentProject.value?.id
@@ -182,30 +173,47 @@ async function generate() {
 
   try {
     // 1. Load nhật ký (station_lines) với batch_number
-    const { data: lines } = await $supabase
-      .from('station_lines')
-      .select('id, km_from, km_to, batch_number, side, quantity, notes, work_items!inner(name, unit), diary_entries!inner(entry_date, structure_id)')
-      .eq('diary_entries.structure_id', structureId.value)
-      .not('km_from', 'is', null)
-      .not('batch_number', 'is', null)
+    const allLines: any[] = []
+    const pgSize = 1000
+    let offset = 0
+    while (true) {
+      const { data, error } = await $supabase
+        .from('station_lines')
+        .select('id, km_from, km_to, batch_number, side, quantity, notes, work_items!inner(name, unit), diary_entries!inner(entry_date, structure_id)')
+        .eq('diary_entries.structure_id', structureId.value)
+        .not('km_from', 'is', null)
+        .not('batch_number', 'is', null)
+        .range(offset, offset + pgSize - 1)
+      if (error || !data || data.length === 0) break
+      allLines.push(...data)
+      if (data.length < pgSize) break
+      offset += pgSize
+    }
 
-    if (!lines?.length) { loading.value = false; return }
+    if (!allLines.length) { loading.value = false; return }
 
     // Lọc theo item_type
-    const filtered = lines.filter(l => nameMatchesItemType(l.work_items?.name || '', itemType.value))
+    const filtered = allLines.filter(l => nameMatchesItemType(l.work_items?.name || '', itemType.value))
     if (!filtered.length) { loading.value = false; return }
 
+    // Lọc theo side
+    const lines = sideFilter.value
+      ? filtered.filter(l => (l.side || 'T') === sideFilter.value)
+      : filtered
+
+    if (!lines.length) { loading.value = false; return }
+
     // 2. Load ĐTPL (phân trang)
-    const dtplMap: Record<string, Map<number, Map<number, number>>> = {} // key=side → station → layer → area
-    const pageSize = 1000
-    let from = 0
+    // key=side → station → layer → area
+    const dtplMap: Record<string, Map<number, Map<number, number>>> = {}
+    offset = 0
     while (true) {
       const { data, error } = await $supabase
         .from('layer_sections')
         .select('station, layer, side, area, item_type')
         .eq('project_id', pid)
         .eq('item_type', itemType.value)
-        .range(from, from + pageSize - 1)
+        .range(offset, offset + pgSize - 1)
       if (error || !data || data.length === 0) break
       for (const r of data) {
         const s = r.side || 'T'
@@ -213,21 +221,19 @@ async function generate() {
         if (!dtplMap[s].has(r.station)) dtplMap[s].set(r.station, new Map())
         dtplMap[s].get(r.station)!.set(r.layer, r.area)
       }
-      if (data.length < pageSize) break
-      from += pageSize
+      if (data.length < pgSize) break
+      offset += pgSize
     }
 
     // 3. Tính khối lượng
     const rows: ResultRow[] = []
-    for (const line of filtered) {
+    for (const line of lines) {
       const kmA = Math.min(Number(line.km_from), Number(line.km_to ?? line.km_from))
       const kmB = Math.max(Number(line.km_from), Number(line.km_to ?? line.km_from))
       const bn = Number(line.batch_number)
       const lineSide = line.side || 'T'
       const date = line.diary_entries?.entry_date || ''
       const fDate = date ? date.split('-').reverse().join('/') : ''
-
-      if (sideFilter.value && lineSide !== sideFilter.value) continue
 
       const sideData = dtplMap[lineSide]
       if (!sideData) continue
@@ -239,15 +245,12 @@ async function generate() {
 
       if (stationsInRange.length < 2) continue
 
-      // Tìm maxLayer tại mỗi station
       const maxLayerAtStation = (st: number) => {
         const layers = sideData.get(st)
-        if (!layers) return 0
+        if (!layers || layers.size === 0) return 0
         return Math.max(...layers.keys())
       }
 
-      // Tính KL cho từng lớp từ bn đến maxLayer(station)
-      // Với mỗi cặp station liền kề, tính cho mỗi lớp
       let subtotalVol = 0
       for (let si = 0; si < stationsInRange.length - 1; si++) {
         const st1 = stationsInRange[si]
@@ -260,7 +263,7 @@ async function generate() {
         for (let layer = bn; layer <= maxL; layer++) {
           const a1 = layers1.get(layer) || 0
           const a2 = layers2.get(layer) || 0
-          if (a1 === 0 && a2 === 0) continue // lớp không tồn tại tại cả 2 MC
+          if (a1 === 0 && a2 === 0) continue
           const vol = (a1 + a2) / 2 * dist
           subtotalVol += vol
           rows.push({
@@ -280,7 +283,6 @@ async function generate() {
         }
       }
 
-      // Subtotal cho nhật ký này
       if (subtotalVol > 0) {
         rows.push({
           date: fDate,
@@ -292,7 +294,7 @@ async function generate() {
           area1: '', area2: '', length: '',
           volume: subtotalVol.toFixed(2),
           isSubtotal: true,
-          volNum: 0, // không cộng vào tổng (đã cộng từng dòng)
+          volNum: 0,
         })
       }
     }
@@ -331,3 +333,9 @@ async function exportExcel() {
   XLSX.writeFile(wb, `KL-lop-${itemType.value}-${structName.replace(/[/\\?*[\]]/g, '_')}.xlsx`)
 }
 </script>
+
+<style scoped>
+.input-sm {
+  @apply px-3 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-primary-500 focus:border-primary-500;
+}
+</style>
