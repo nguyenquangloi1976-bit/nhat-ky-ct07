@@ -36,13 +36,14 @@
           </button>
         </div>
       </div>
+      <p v-if="errorMsg" class="text-red-500 text-xs mt-2">{{ errorMsg }}</p>
     </div>
 
     <!-- Kết quả -->
     <div v-if="result.length" class="bg-white rounded-lg shadow-sm border p-4 mb-4">
       <div class="flex justify-between items-center mb-3">
         <h2 class="font-semibold text-gray-700">
-          Kết quả: {{ result.length }} dòng
+          Kết quả: {{ detailCount }} dòng chi tiết
           <span class="text-gray-400 font-normal text-sm ml-2">
             Tổng KL: {{ totalVol.toFixed(2) }} m³
           </span>
@@ -105,6 +106,7 @@ definePageMeta({ middleware: 'auth' })
 const { $supabase } = useNuxtApp()
 const { currentProject } = useProject()
 const { getStructures } = useStructures()
+const { listLines } = useDiary()
 
 const ITEM_TYPES = [
   { label: 'Đắp K95', value: 'K95' },
@@ -137,6 +139,7 @@ const itemType = ref('K95')
 const sideFilter = ref('')
 const loading = ref(false)
 const generated = ref(false)
+const errorMsg = ref('')
 
 interface ResultRow {
   date: string; side: string; kmRange: string; batchNumber: string | number
@@ -146,11 +149,11 @@ interface ResultRow {
 }
 const result = ref<ResultRow[]>([])
 const totalVol = computed(() => result.value.reduce((s, r) => s + (r.volNum || 0), 0))
+const detailCount = computed(() => result.value.filter(r => !r.isSubtotal).length)
 
 async function loadStructures() {
   try {
     structures.value = await getStructures()
-    // Tự chọn công trình đường nếu có
     const road = structures.value.find(s => s.structure_types?.name === 'Đường')
     if (road) structureId.value = road.id
     else if (structures.value.length) structureId.value = structures.value[0].id
@@ -159,7 +162,6 @@ async function loadStructures() {
   }
 }
 
-// Watch currentProject thay đổi
 watch(() => currentProject.value?.id, (pid) => {
   if (pid) loadStructures()
 }, { immediate: true })
@@ -170,43 +172,30 @@ async function generate() {
   loading.value = true
   generated.value = true
   result.value = []
+  errorMsg.value = ''
 
   try {
-    // 1. Load nhật ký (station_lines) với batch_number
-    const allLines: any[] = []
-    const pgSize = 1000
-    let offset = 0
-    while (true) {
-      const { data, error } = await $supabase
-        .from('station_lines')
-        .select('id, km_from, km_to, batch_number, side, quantity, notes, work_items!inner(name, unit), diary_entries!inner(entry_date, structure_id)')
-        .eq('diary_entries.structure_id', structureId.value)
-        .not('km_from', 'is', null)
-        .not('batch_number', 'is', null)
-        .range(offset, offset + pgSize - 1)
-      if (error || !data || data.length === 0) break
-      allLines.push(...data)
-      if (data.length < pgSize) break
-      offset += pgSize
+    // 1. Load nhật ký qua composable (đã phân trang sẵn)
+    const allLines = await listLines({ structureId: structureId.value })
+
+    // Lọc: có batch_number, có km_from, tên hạng mục khớp item_type
+    const filtered = allLines.filter(l =>
+      l.batch_number &&
+      l.km_from != null &&
+      nameMatchesItemType(l.work_items?.name || '', itemType.value) &&
+      (!sideFilter.value || (l.side || 'T') === sideFilter.value)
+    )
+
+    if (!filtered.length) {
+      errorMsg.value = `Tìm thấy ${allLines.length} dòng NK nhưng không có dòng nào khớp ${itemType.value}${sideFilter.value ? ' bên ' + sideFilter.value : ''}`
+      loading.value = false
+      return
     }
 
-    if (!allLines.length) { loading.value = false; return }
-
-    // Lọc theo item_type
-    const filtered = allLines.filter(l => nameMatchesItemType(l.work_items?.name || '', itemType.value))
-    if (!filtered.length) { loading.value = false; return }
-
-    // Lọc theo side
-    const lines = sideFilter.value
-      ? filtered.filter(l => (l.side || 'T') === sideFilter.value)
-      : filtered
-
-    if (!lines.length) { loading.value = false; return }
-
     // 2. Load ĐTPL (phân trang)
-    // key=side → station → layer → area
     const dtplMap: Record<string, Map<number, Map<number, number>>> = {}
-    offset = 0
+    const pgSize = 1000
+    let offset = 0
     while (true) {
       const { data, error } = await $supabase
         .from('layer_sections')
@@ -214,7 +203,8 @@ async function generate() {
         .eq('project_id', pid)
         .eq('item_type', itemType.value)
         .range(offset, offset + pgSize - 1)
-      if (error || !data || data.length === 0) break
+      if (error) { errorMsg.value = 'Lỗi load ĐTPL: ' + error.message; break }
+      if (!data || data.length === 0) break
       for (const r of data) {
         const s = r.side || 'T'
         if (!dtplMap[s]) dtplMap[s] = new Map()
@@ -225,9 +215,16 @@ async function generate() {
       offset += pgSize
     }
 
+    const dtplTotal = Object.values(dtplMap).reduce((s, m) => s + m.size, 0)
+    if (dtplTotal === 0) {
+      errorMsg.value = `Có ${filtered.length} dòng NK khớp nhưng không có dữ liệu ĐTPL cho ${itemType.value}`
+      loading.value = false
+      return
+    }
+
     // 3. Tính khối lượng
     const rows: ResultRow[] = []
-    for (const line of lines) {
+    for (const line of filtered) {
       const kmA = Math.min(Number(line.km_from), Number(line.km_to ?? line.km_from))
       const kmB = Math.max(Number(line.km_from), Number(line.km_to ?? line.km_from))
       const bn = Number(line.batch_number)
@@ -238,7 +235,6 @@ async function generate() {
       const sideData = dtplMap[lineSide]
       if (!sideData) continue
 
-      // Lấy stations trong đoạn, sắp xếp
       const stationsInRange = Array.from(sideData.keys())
         .filter(st => st >= kmA && st <= kmB)
         .sort((a, b) => a - b)
@@ -267,17 +263,12 @@ async function generate() {
           const vol = (a1 + a2) / 2 * dist
           subtotalVol += vol
           rows.push({
-            date: fDate,
-            side: lineSide,
+            date: fDate, side: lineSide,
             kmRange: `${formatKm(kmA)} – ${formatKm(kmB)}`,
-            batchNumber: bn,
-            layer,
-            stFrom: formatKm(st1),
-            stTo: formatKm(st2),
-            area1: a1.toFixed(3),
-            area2: a2.toFixed(3),
-            length: dist.toFixed(1),
-            volume: vol.toFixed(2),
+            batchNumber: bn, layer,
+            stFrom: formatKm(st1), stTo: formatKm(st2),
+            area1: a1.toFixed(3), area2: a2.toFixed(3),
+            length: dist.toFixed(1), volume: vol.toFixed(2),
             volNum: vol,
           })
         }
@@ -285,22 +276,23 @@ async function generate() {
 
       if (subtotalVol > 0) {
         rows.push({
-          date: fDate,
-          side: lineSide,
+          date: fDate, side: lineSide,
           kmRange: `${formatKm(kmA)} – ${formatKm(kmB)}`,
-          batchNumber: `Lớp ${bn}`,
-          layer: '',
+          batchNumber: `Lớp ${bn}`, layer: '',
           stFrom: '', stTo: '',
           area1: '', area2: '', length: '',
           volume: subtotalVol.toFixed(2),
-          isSubtotal: true,
-          volNum: 0,
+          isSubtotal: true, volNum: 0,
         })
       }
     }
 
     result.value = rows
+    if (!rows.length) {
+      errorMsg.value = `${filtered.length} dòng NK, ${dtplTotal} stations ĐTPL — nhưng không có stations ĐTPL nằm trong lý trình nhật ký`
+    }
   } catch (e: any) {
+    errorMsg.value = 'Lỗi: ' + (e.message || e)
     console.error('Generate error:', e)
   } finally {
     loading.value = false
