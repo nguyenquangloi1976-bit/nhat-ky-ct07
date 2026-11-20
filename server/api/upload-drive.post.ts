@@ -2,14 +2,14 @@ import { getAccessToken } from '../utils/google-auth'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { fileName, mimeType, fileSize } = body
+  const { fileName, mimeType, fileSize, folderId: clientFolderId } = body
 
   if (!fileName) {
     throw createError({ statusCode: 400, statusMessage: 'Thiếu fileName' })
   }
 
   const config = useRuntimeConfig()
-  const folderId = config.googleDriveFolderId as string
+  const folderId = (clientFolderId as string) || (config.googleDriveFolderId as string)
   const accessToken = await getAccessToken()
 
   // Tạo resumable upload session

@@ -25,6 +25,7 @@
             <div class="flex flex-wrap gap-4 text-xs text-gray-400">
               <span v-if="p.km_range">📍 {{ p.km_range }}</span>
               <span v-if="p.consortium">👥 {{ p.consortium }}</span>
+              <a v-if="p.drive_folder_url" :href="p.drive_folder_url" target="_blank" class="text-blue-500 hover:underline">📁 Google Drive</a>
               <span v-if="p.start_date">📅 {{ p.start_date }} → {{ p.end_date || '...' }}</span>
               <span>📂 {{ p._typeCount || 0 }} loại</span>
               <span>🏗️ {{ p._structCount || 0 }} công trình</span>
@@ -91,6 +92,12 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">Liên danh</label>
             <input v-model="form.consortium" type="text" placeholder="TEDI – CTGT2 – ..."
               class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-1 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Thư mục Google Drive</label>
+            <input v-model="form.drive_folder_url" type="url" placeholder="https://drive.google.com/drive/folders/..."
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-1 focus:ring-primary-500" />
+            <p class="text-xs text-gray-400 mt-1">Dán link thư mục Drive dùng để lưu tài liệu dự án</p>
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
@@ -177,6 +184,7 @@ const form = reactive({
   end_date: '',
   is_active: true,
   has_left_right: false,
+  drive_folder_url: '',
   types: [] as { code: string; name: string; id?: string }[],
 })
 
@@ -190,6 +198,7 @@ function resetForm() {
   form.end_date = ''
   form.is_active = true
   form.has_left_right = false
+  form.drive_folder_url = ''
   form.types = []
   existingTypes.value = []
   editingId.value = null
@@ -245,6 +254,7 @@ async function openEdit(p: any) {
   form.end_date = p.end_date || ''
   form.is_active = p.is_active
   form.has_left_right = p.has_left_right ?? false
+  form.drive_folder_url = p.drive_folder_url || ''
 
   // Load existing types for this project
   try {
@@ -279,6 +289,7 @@ async function save() {
       end_date: form.end_date || null,
       is_active: form.is_active,
       has_left_right: form.has_left_right,
+      drive_folder_url: form.drive_folder_url || null,
     }
     let projectId = editingId.value
 

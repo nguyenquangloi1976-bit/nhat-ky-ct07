@@ -5,7 +5,7 @@ export function useUploadDrive() {
   const uploadError = ref('')
   const uploadProgress = ref(0)
 
-  async function uploadFile(file: File): Promise<string | null> {
+  async function uploadFile(file: File, folderId?: string): Promise<string | null> {
     uploading.value = true
     uploadError.value = ''
     uploadProgress.value = 0
@@ -18,6 +18,7 @@ export function useUploadDrive() {
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
           fileSize: file.size,
+          ...(folderId ? { folderId } : {}),
         },
       })
 

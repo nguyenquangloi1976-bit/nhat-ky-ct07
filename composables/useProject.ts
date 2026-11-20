@@ -9,6 +9,7 @@ export interface Project {
   end_date: string | null
   is_active: boolean
   has_left_right: boolean
+  drive_folder_url: string | null
   created_at: string
 }
 
