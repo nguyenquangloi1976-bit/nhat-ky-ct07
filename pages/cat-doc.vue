@@ -279,15 +279,9 @@ async function loadDtplLayerCounts() {
       .sort((a, b) => a.station - b.station)
   }
   dtplStationMaxLayer.value = result
-  console.log('[DTPL] maxByType:', JSON.stringify(maxByType))
-  console.log('[DTPL] keys:', Object.keys(result))
-  for (const [k, arr] of Object.entries(result)) {
-    const near66 = arr.filter(s => s.station >= 65500 && s.station <= 67000)
-    if (near66.length) console.log(`[DTPL] ${k} near 66km:`, JSON.stringify(near66))
-  }
 }
 
-// Tìm max layer ĐTPL trong đoạn [kmFrom, kmTo] (mở rộng 500m hai bên)
+// Tìm max layer ĐTPL trong đoạn [kmFrom, kmTo]
 function getMaxLayerForRange(itemType: string, side: string | null, kmFrom: number, kmTo: number): number {
   const keys = side ? [`${itemType}:${side}`, itemType] : [itemType]
   for (const key of keys) {
@@ -299,9 +293,8 @@ function getMaxLayerForRange(itemType: string, side: string | null, kmFrom: numb
         if (s.maxLayer > maxL) maxL = s.maxLayer
       }
     }
-    if (maxL > 0) { console.log(`[DTPL lookup] ${key} [${kmFrom}-${kmTo}] → maxLayer=${maxL}`); return maxL }
+    if (maxL > 0) return maxL
   }
-  console.log(`[DTPL lookup] ${itemType} side=${side} [${kmFrom}-${kmTo}] → NOT FOUND`)
   return 0  // không có cọc ĐTPL trong đoạn → không xác nhận
 }
 
