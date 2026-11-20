@@ -31,21 +31,7 @@
       </div>
     </div>
 
-    <!-- Group Tabs -->
-    <div class="flex items-center space-x-2 mb-4 overflow-x-auto pb-1">
-      <button @click="filterGroup = ''"
-        :class="['px-4 py-1.5 text-sm rounded-full border whitespace-nowrap transition',
-          filterGroup === '' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400']">
-        Tất cả ({{ docs.length }})
-      </button>
-      <button v-for="(label, code) in GROUP_LABELS" :key="code" @click="filterGroup = code"
-        :class="['px-4 py-1.5 text-sm rounded-full border whitespace-nowrap transition',
-          filterGroup === code ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400']">
-        {{ code }} – {{ label }} ({{ groupCount(code) }})
-      </button>
-    </div>
-
-    <!-- Search + Status filter -->
+    <!-- Filter -->
     <div class="flex items-center flex-wrap gap-3 mb-4">
       <div class="relative flex-1 min-w-[200px]">
         <input v-model="searchQuery" type="text" placeholder="Tìm kiếm tài liệu..."
@@ -57,6 +43,10 @@
       <select v-model="filterStatus" class="border rounded-lg px-3 py-1.5 text-sm">
         <option value="">Tất cả trạng thái</option>
         <option v-for="(label, code) in STATUS_LABELS" :key="code" :value="code">{{ label }}</option>
+      </select>
+      <select v-model="filterGroup" class="border rounded-lg px-3 py-1.5 text-sm">
+        <option value="">Tất cả nhóm</option>
+        <option v-for="(label, code) in GROUP_LABELS" :key="code" :value="code">{{ code }} – {{ label }}</option>
       </select>
     </div>
 
@@ -96,8 +86,8 @@
               <span :class="['px-2 py-0.5 text-xs rounded-full whitespace-nowrap', STATUS_COLORS[doc.status]]">
                 {{ STATUS_LABELS[doc.status] }}
               </span>
-              <button v-if="isAdmin" @click="editDoc(doc)" class="text-gray-400 hover:text-primary-600 text-xs">Sửa</button>
-              <button v-if="isAdmin" @click="confirmDelete(doc)" class="text-gray-400 hover:text-red-600 text-xs">Xóa</button>
+              <button @click="editDoc(doc)" class="text-gray-400 hover:text-primary-600 text-xs">Sửa</button>
+              <button @click="confirmDelete(doc)" class="text-gray-400 hover:text-red-600 text-xs">Xóa</button>
             </div>
           </div>
         </div>
@@ -159,46 +149,11 @@
             </div>
           </div>
 
-          <!-- Upload / Link tài liệu -->
+          <!-- Link Google Drive -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tài liệu đính kèm</label>
-            <!-- Upload file -->
-            <div v-if="!form.file_url">
-              <div class="flex items-center gap-2">
-                <label class="flex-1 flex items-center justify-center border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer hover:border-primary-400 transition"
-                  :class="selectedFile ? 'border-green-400 bg-green-50' : 'border-gray-300'">
-                  <input type="file" class="hidden" @change="onFileSelect"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" />
-                  <span v-if="!selectedFile" class="text-sm text-gray-500">📎 Chọn file để upload lên Drive</span>
-                  <span v-else class="text-sm text-green-700 truncate">{{ selectedFile.name }}</span>
-                </label>
-                <button v-if="selectedFile" @click="doUpload" :disabled="uploading" type="button"
-                  class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
-                  {{ uploading ? 'Đang tải...' : 'Upload' }}
-                </button>
-              </div>
-              <!-- Hoặc dán link -->
-              <div class="mt-2">
-                <input v-model="manualUrl" type="url" class="w-full border rounded-lg px-3 py-2 text-sm"
-                  placeholder="Hoặc dán link Google Drive..." @change="manualUrl && (form.file_url = manualUrl)" />
-              </div>
-            </div>
-            <!-- Hiện link đã có -->
-            <div v-else class="flex items-center gap-2 mt-1 p-2 bg-green-50 rounded-lg border border-green-200">
-              <span class="text-green-600">✓</span>
-              <a :href="form.file_url" target="_blank" class="text-xs text-blue-600 hover:underline truncate flex-1">
-                {{ form.file_url }}
-              </a>
-              <button @click="form.file_url = ''" type="button" class="text-xs text-gray-400 hover:text-red-500">✕</button>
-            </div>
-            <!-- Thanh tiến trình -->
-            <div v-if="uploading" class="mt-1">
-              <div class="w-full bg-gray-200 rounded-full h-2">
-                <div class="bg-blue-600 h-2 rounded-full transition-all" :style="{ width: uploadProgress + '%' }"></div>
-              </div>
-              <p class="text-xs text-gray-500 mt-0.5">{{ uploadProgress }}%</p>
-            </div>
-            <p v-if="uploadError" class="text-xs text-red-600 mt-1">{{ uploadError }}</p>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Link tài liệu (Google Drive)</label>
+            <input v-model="form.file_url" type="url" class="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="https://drive.google.com/..." />
           </div>
 
           <!-- Ghi chú TVGS -->
@@ -236,26 +191,6 @@ const {
 } = useSubmissionDocs()
 
 const { showToast } = useToast()
-const { isAdmin } = useAuth()
-const { uploadFile, uploading, uploadError, uploadProgress } = useUploadDrive()
-const selectedFile = ref<File | null>(null)
-const manualUrl = ref('')
-
-function onFileSelect(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (input.files?.length) {
-    selectedFile.value = input.files[0]
-  }
-}
-
-async function doUpload() {
-  if (!selectedFile.value) return
-  const url = await uploadFile(selectedFile.value)
-  if (url) {
-    form.value.file_url = url
-    selectedFile.value = null
-  }
-}
 
 const showModal = ref(false)
 const editingDoc = ref<any>(null)
@@ -308,10 +243,6 @@ const defaultForm = () => ({
 })
 
 const form = ref(defaultForm())
-
-function groupCount(code: string) {
-  return docs.value.filter(d => d.group_code === code).length
-}
 
 const filtered = computed(() => {
   let list = docs.value
@@ -395,12 +326,5 @@ async function confirmDelete(doc: any) {
   }
 }
 
-const { currentProject } = useProject()
-
 onMounted(() => loadDocs())
-
-// Reload khi project sẵn sàng (load bất đồng bộ)
-watch(() => currentProject.value, (val) => {
-  if (val) loadDocs()
-})
 </script>
