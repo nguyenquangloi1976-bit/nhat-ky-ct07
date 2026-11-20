@@ -214,21 +214,23 @@
             <div v-if="!entry?.is_locked" ref="pickerSection" class="p-3 border-t">
               <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">1. Chọn bộ phận</div>
               <div class="flex flex-wrap gap-1.5 mb-3">
-                <button v-for="g in groupList" :key="g" @click="selectedGroup = g"
-                  :class="['px-2.5 py-1 rounded border text-sm transition',
-                    selectedGroup === g ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400',
-                    groupsWithLines.has(g) && selectedGroup !== g ? 'ring-1 ring-yellow-400' : '']">
-                  {{ g }}
-                </button>
+                <span v-for="g in groupList" :key="g" class="inline-flex items-center gap-0.5">
+                  <button @click="selectedGroup = g"
+                    :class="['px-2.5 py-1 rounded-l border text-sm transition',
+                      g !== 'Khác' ? 'border-r-0' : 'rounded-r',
+                      selectedGroup === g ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400',
+                      groupsWithLines.has(g) && selectedGroup !== g ? 'ring-1 ring-yellow-400' : '']">
+                    {{ g }}
+                  </button>
+                  <button v-if="g !== 'Khác'" @click.stop="deleteGroup(g)" :title="'Xóa bộ phận ' + g"
+                    :class="['px-1 py-1 rounded-r border border-l-0 text-sm transition',
+                      selectedGroup === g ? 'bg-primary-600 text-primary-200 border-primary-600 hover:text-white' : 'bg-white text-gray-400 border-gray-300 hover:text-red-500 hover:border-red-400']">
+                    ×
+                  </button>
+                </span>
                 <button @click="openAddInGroup('')" title="Thêm một bộ phận mới cùng hạng mục đầu tiên của nó"
                   class="px-2.5 py-1 rounded border border-dashed border-primary-400 text-sm text-primary-600 hover:bg-primary-50">
                   + Bộ phận mới
-                </button>
-                <button v-if="selectedGroup && selectedGroup !== 'Khác'"
-                  @click="deleteGroup(selectedGroup)"
-                  title="Xóa bộ phận đang chọn"
-                  class="px-2.5 py-1 rounded border border-dashed border-red-400 text-sm text-red-600 hover:bg-red-50">
-                  Xóa
                 </button>
               </div>
               <template v-if="selectedGroup">
