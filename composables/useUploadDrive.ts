@@ -1,4 +1,4 @@
-const CHUNK_SIZE = 3 * 1024 * 1024 // 3MB — dưới giới hạn 4.5MB của Vercel
+const CHUNK_SIZE = 2 * 1024 * 1024 // 2MB — giảm để tránh timeout Vercel free
 
 export function useUploadDrive() {
   const uploading = ref(false)
@@ -26,31 +26,44 @@ export function useUploadDrive() {
       const totalSize = file.size
       let offset = 0
 
-      // Bước 2: Gửi từng chunk
+      // Bước 2: Gửi từng chunk với retry
+      const MAX_RETRIES = 3
       while (offset < totalSize) {
         const end = Math.min(offset + CHUNK_SIZE, totalSize)
         const chunk = file.slice(offset, end)
 
-        const res = await $fetch<{ done: boolean; uploaded?: number; fileUrl?: string }>(
-          '/api/upload-drive-chunk',
-          {
-            method: 'POST',
-            params: { offset, totalSize },
-            headers: {
-              'Content-Type': 'application/octet-stream',
-              'x-session-url': sessionUrl,
-            },
-            body: chunk,
+        let lastErr: any = null
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            const res = await $fetch<{ done: boolean; uploaded?: number; fileUrl?: string }>(
+              '/api/upload-drive-chunk',
+              {
+                method: 'POST',
+                params: { offset, totalSize },
+                headers: {
+                  'Content-Type': 'application/octet-stream',
+                  'x-session-url': sessionUrl,
+                },
+                body: chunk,
+              }
+            )
+
+            if (res.done && res.fileUrl) {
+              uploadProgress.value = 100
+              return res.fileUrl
+            }
+
+            offset = res.uploaded || end
+            uploadProgress.value = Math.round((offset / totalSize) * 100)
+            lastErr = null
+            break
+          } catch (e: any) {
+            lastErr = e
+            // Chờ 2 giây trước khi thử lại
+            await new Promise(r => setTimeout(r, 2000))
           }
-        )
-
-        if (res.done && res.fileUrl) {
-          uploadProgress.value = 100
-          return res.fileUrl
         }
-
-        offset = res.uploaded || end
-        uploadProgress.value = Math.round((offset / totalSize) * 100)
+        if (lastErr) throw lastErr
       }
 
       uploadError.value = 'Upload không hoàn tất'
