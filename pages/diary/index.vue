@@ -134,6 +134,7 @@
                         <option :value="null">—</option>
                         <option value="T">T</option>
                         <option value="P">P</option>
+                        <option value="TP">T+P</option>
                       </select>
                     </td>
                     <!-- Đợt / Lớp -->
@@ -797,16 +798,25 @@ async function autoCalcK95(row: any) {
   _calcTimers.set(key, setTimeout(async () => {
     _calcTimers.delete(key)
     try {
-      const result = await calcVolume({
-        side: line.side as 'T' | 'P',
+      const calcParams = {
         layer: Number(line.batch_number),
         kmFrom: Math.min(kmFrom, kmTo),
         kmTo: Math.max(kmFrom, kmTo),
-      })
-      if (result.volume > 0) {
-        line.quantity = result.volume
+      }
+      let totalVol = 0
+      let formulaParts: string[] = []
+      const sides: ('T' | 'P')[] = line.side === 'TP' ? ['T', 'P'] : [line.side as 'T' | 'P']
+      for (const s of sides) {
+        const result = await calcVolume({ ...calcParams, side: s })
+        if (result.volume > 0) {
+          totalVol += result.volume
+          formulaParts.push(sides.length > 1 ? `${s}: ${result.formula}` : result.formula)
+        }
+      }
+      if (totalVol > 0) {
+        line.quantity = Math.round(totalVol * 100) / 100
         line._autoCalc = true
-        line._autoCalcFormula = result.formula
+        line._autoCalcFormula = formulaParts.join(' | ')
       }
     } catch (e) {
       console.warn('Auto-calc K95 failed:', e)
