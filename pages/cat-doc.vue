@@ -413,7 +413,14 @@ function buildRows(side: 'T' | 'P' | null) {
 
           if (count === 1) return [mkSeg(lo, hi, true)]
           if (lift < bn) return []  // lớp trên lớp đã ghi → chưa đắp
-          if (lift === bn) return [mkSeg(lo, hi, true)]  // đúng lớp đã ghi → hiện lý trình nhật ký
+          if (lift === bn) {
+            // Lọc theo ĐTPL: chỉ tô những mặt cắt thực sự có lớp này
+            if (itemType) {
+              const subRanges = getSubRangesForLayer(itemType, side, lo, hi, lift)
+              if (subRanges.length > 0) return subRanges.map(r => mkSeg(r.a, r.b, true))
+            }
+            return [mkSeg(lo, hi, true)]  // fallback nếu không có ĐTPL
+          }
           // lift > bn: lớp dưới → tạo sub-segment theo lý trình ĐTPL
           if (itemType) {
             const subRanges = getSubRangesForLayer(itemType, side, lo, hi, lift)
