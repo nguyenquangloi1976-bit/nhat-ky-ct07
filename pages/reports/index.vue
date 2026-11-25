@@ -144,7 +144,10 @@
                   ĐTPL: {{ row.dtpl_km_range }}
                 </div>
                 <div v-if="row.deployed_length > 0" class="text-[10px] text-blue-500 leading-tight mt-0.5">
-                  Đã triển khai: {{ formatNum(row.deployed_length) }}m ({{ row.deployed_range }})
+                  Đã TK: {{ formatNum(row.deployed_length) }}m
+                  <div v-for="d in row.deployed_detail" :key="d.side" class="text-[10px] text-blue-400">
+                    {{ d.side === 'TP' ? 'T+P' : d.side }}: {{ formatNum(d.length) }}m — {{ d.segments }}
+                  </div>
                 </div>
               </td>
               <td class="px-3 py-2 text-right font-medium"
@@ -321,7 +324,7 @@ async function loadReport() {
     entryCount.value = entryIds.size
 
     // 3. Aggregate: km-based items sum normally; non-km items use max-per-batch (cọc, K95…)
-    const agg = new Map<string, { structureId: string; sumKm: number; maxByBatch: Map<string, number>; maxBatch: number; minBatch: number; kmSegments: [number, number][] }>()
+    const agg = new Map<string, { structureId: string; sumKm: number; maxByBatch: Map<string, number>; maxBatch: number; minBatch: number; kmSegments: { from: number; to: number; side: string }[] }>()
     for (const line of rawLines) {
       const entry = line.diary_entries
       if (!entry) continue
@@ -337,7 +340,7 @@ async function loadReport() {
       const hasKm = line.km_from != null
       // Thu thập đoạn lý trình đã triển khai
       if (line.km_from != null && line.km_to != null && line.km_from !== line.km_to) {
-        item.kmSegments.push([Math.min(line.km_from, line.km_to), Math.max(line.km_from, line.km_to)])
+        item.kmSegments.push({ from: Math.min(line.km_from, line.km_to), to: Math.max(line.km_from, line.km_to), side: line.side || '?' })
       }
       // Integer-unit items (cọc, chiếc…): each diary line = distinct event → sum
       // Continuous-unit non-km items (m³ K95…): same batch recorded multiple times → max per batch
@@ -384,24 +387,34 @@ async function loadReport() {
             layerInfo = `lớp ${maxBatch}→${minBatch}`
           }
         }
-        // Tính chiều dài đã triển khai từ merged km segments
+        // Tính chiều dài đã triển khai — nhóm theo bên T/P
         let deployedLength = 0
-        let deployedRange = ''
+        let deployedDetail: { side: string; length: number; segments: string }[] = []
         if (aggEntry && aggEntry.kmSegments.length > 0) {
-          const segs = [...aggEntry.kmSegments].sort((a, b) => a[0] - b[0])
-          const merged: [number, number][] = [segs[0]]
-          for (let i = 1; i < segs.length; i++) {
-            const last = merged[merged.length - 1]
-            if (segs[i][0] <= last[1]) {
-              last[1] = Math.max(last[1], segs[i][1])
-            } else {
-              merged.push(segs[i])
-            }
+          // Nhóm theo side
+          const bySide = new Map<string, { from: number; to: number }[]>()
+          for (const seg of aggEntry.kmSegments) {
+            const s = seg.side || '?'
+            if (!bySide.has(s)) bySide.set(s, [])
+            bySide.get(s)!.push({ from: seg.from, to: seg.to })
           }
-          deployedLength = merged.reduce((sum, s) => sum + (s[1] - s[0]), 0)
-          const minKm = merged[0][0]
-          const maxKm = merged[merged.length - 1][1]
-          deployedRange = _fmtKmRange(minKm, maxKm)
+          for (const [side, segs] of bySide) {
+            segs.sort((a, b) => a.from - b.from)
+            const merged: { from: number; to: number }[] = [{ ...segs[0] }]
+            for (let i = 1; i < segs.length; i++) {
+              const last = merged[merged.length - 1]
+              if (segs[i].from <= last.to) {
+                last.to = Math.max(last.to, segs[i].to)
+              } else {
+                merged.push({ ...segs[i] })
+              }
+            }
+            const len = merged.reduce((sum, s) => sum + (s.to - s.from), 0)
+            deployedLength += len
+            const segStr = merged.map(s => _fmtKmRange(s.from, s.to)).join(', ')
+            deployedDetail.push({ side, length: len, segments: segStr })
+          }
+          deployedDetail.sort((a, b) => a.side.localeCompare(b.side))
         }
         rows.push({
           structure_id: structId,
@@ -417,7 +430,7 @@ async function loadReport() {
           max_batch: maxBatch,
           layer_info: layerInfo,
           deployed_length: deployedLength,
-          deployed_range: deployedRange,
+          deployed_detail: deployedDetail,
           _sortOrder: 0,
         })
       }
