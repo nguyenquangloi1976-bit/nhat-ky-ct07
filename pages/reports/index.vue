@@ -143,6 +143,9 @@
                 <div v-if="row.dtpl_km_range" class="text-[10px] text-gray-400 leading-tight mt-0.5">
                   ĐTPL: {{ row.dtpl_km_range }}
                 </div>
+                <div v-if="row.deployed_length > 0" class="text-[10px] text-blue-500 leading-tight mt-0.5">
+                  Đã triển khai: {{ formatNum(row.deployed_length) }}m ({{ row.deployed_range }})
+                </div>
               </td>
               <td class="px-3 py-2 text-right font-medium"
                 :class="row.total_quantity > 0 ? 'text-primary-700' : 'text-gray-400'">
@@ -318,7 +321,7 @@ async function loadReport() {
     entryCount.value = entryIds.size
 
     // 3. Aggregate: km-based items sum normally; non-km items use max-per-batch (cọc, K95…)
-    const agg = new Map<string, { structureId: string; sumKm: number; maxByBatch: Map<string, number>; maxBatch: number; minBatch: number }>()
+    const agg = new Map<string, { structureId: string; sumKm: number; maxByBatch: Map<string, number>; maxBatch: number; minBatch: number; kmSegments: [number, number][] }>()
     for (const line of rawLines) {
       const entry = line.diary_entries
       if (!entry) continue
@@ -328,10 +331,14 @@ async function loadReport() {
       const key = line.work_item_id
       let item = agg.get(key)
       if (!item) {
-        item = { structureId: structId, sumKm: 0, maxByBatch: new Map(), maxBatch: 0, minBatch: Infinity }
+        item = { structureId: structId, sumKm: 0, maxByBatch: new Map(), maxBatch: 0, minBatch: Infinity, kmSegments: [] }
         agg.set(key, item)
       }
       const hasKm = line.km_from != null
+      // Thu thập đoạn lý trình đã triển khai
+      if (line.km_from != null && line.km_to != null && line.km_from !== line.km_to) {
+        item.kmSegments.push([Math.min(line.km_from, line.km_to), Math.max(line.km_from, line.km_to)])
+      }
       // Integer-unit items (cọc, chiếc…): each diary line = distinct event → sum
       // Continuous-unit non-km items (m³ K95…): same batch recorded multiple times → max per batch
       const INTEGER_UNITS = ['cọc', 'chiếc', 'bộ', 'thanh', 'cái', 'tấm', 'trụ', 'cây', 'mố']
@@ -377,6 +384,25 @@ async function loadReport() {
             layerInfo = `lớp ${maxBatch}→${minBatch}`
           }
         }
+        // Tính chiều dài đã triển khai từ merged km segments
+        let deployedLength = 0
+        let deployedRange = ''
+        if (aggEntry && aggEntry.kmSegments.length > 0) {
+          const segs = [...aggEntry.kmSegments].sort((a, b) => a[0] - b[0])
+          const merged: [number, number][] = [segs[0]]
+          for (let i = 1; i < segs.length; i++) {
+            const last = merged[merged.length - 1]
+            if (segs[i][0] <= last[1]) {
+              last[1] = Math.max(last[1], segs[i][1])
+            } else {
+              merged.push(segs[i])
+            }
+          }
+          deployedLength = merged.reduce((sum, s) => sum + (s[1] - s[0]), 0)
+          const minKm = merged[0][0]
+          const maxKm = merged[merged.length - 1][1]
+          deployedRange = _fmtKmRange(minKm, maxKm)
+        }
         rows.push({
           structure_id: structId,
           structure_name: st.name,
@@ -390,6 +416,8 @@ async function loadReport() {
           total_quantity: total,
           max_batch: maxBatch,
           layer_info: layerInfo,
+          deployed_length: deployedLength,
+          deployed_range: deployedRange,
           _sortOrder: 0,
         })
       }
