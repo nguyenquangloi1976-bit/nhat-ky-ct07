@@ -166,6 +166,51 @@
         </table>
       </div>
     </div>
+
+    <!-- Bảng chi tiết đoạn đã triển khai theo hạng mục nền/mặt đường -->
+    <div v-if="deploymentTable.length" class="bg-white rounded-lg shadow-sm border mt-4">
+      <div class="px-4 py-3 border-b">
+        <h2 class="font-semibold text-gray-700">Chi tiết đoạn đã triển khai (nền & mặt đường)</h2>
+        <p class="text-xs text-gray-400 mt-0.5">Tổng hợp lý trình từ nhật ký thi công — đã merge các đoạn chồng lấn</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-600">
+            <tr>
+              <th class="text-left px-3 py-2">Hạng mục</th>
+              <th class="text-center px-3 py-2">Bên</th>
+              <th class="text-right px-3 py-2">Tổng CD (m)</th>
+              <th class="text-left px-3 py-2">Các đoạn</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <template v-for="(group, gi) in deploymentTable" :key="gi">
+              <tr v-for="(row, ri) in group.rows" :key="gi + '-' + ri"
+                :class="ri === 0 ? 'border-t-2' : ''">
+                <td v-if="ri === 0" :rowspan="group.rows.length" class="px-3 py-2 font-medium text-primary-700 align-top">
+                  {{ group.label }}
+                </td>
+                <td class="px-3 py-2 text-center">{{ row.side === 'TP' ? 'T+P' : row.side }}</td>
+                <td class="px-3 py-2 text-right font-mono">{{ formatNum(row.length) }}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">
+                  <span v-for="(seg, si) in row.segments" :key="si">
+                    <span class="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5 mr-1 mb-0.5">{{ seg }}</span>
+                  </span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+          <tfoot class="bg-gray-50 font-semibold">
+            <tr>
+              <td class="px-3 py-2">Tổng cộng</td>
+              <td></td>
+              <td class="px-3 py-2 text-right font-mono">{{ formatNum(deploymentTotalLength) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -185,6 +230,8 @@ const summaryData = ref<any[]>([])
 const loadingData = ref(false)
 const reportLoaded = ref(false)
 const onlyWithQuantity = ref(true)
+const deploymentTable = ref<{ label: string; itemType: string; rows: { side: string; length: number; segments: string[] }[] }[]>([])
+const deploymentTotalLength = computed(() => deploymentTable.value.reduce((sum, g) => sum + g.rows.reduce((s, r) => s + r.length, 0), 0))
 const activePeriod = ref<'week' | 'month' | 'all'>('all')
 
 const filters = reactive({
@@ -506,6 +553,9 @@ async function loadReport() {
       }
     }
 
+    // 7. Build deployment segments table (nền + mặt đường)
+    _buildDeploymentTable(rawLines)
+
     // Sort: type → structure → sortOrder (tổng cầu cuối cùng) → group → item
     allRows.sort((a, b) =>
       a.type_name.localeCompare(b.type_name)
@@ -625,6 +675,62 @@ async function _calcDesignFromDTPL(itemType: string, unit: 'm3' | 'm2'): Promise
     kmFrom: minSt,
     kmTo: maxSt,
   }
+}
+
+function _buildDeploymentTable(rawLines: any[]) {
+  const ITEM_LABELS: Record<string, string> = {
+    K95: 'Đắp K95',
+    K98: 'Đắp K98',
+    XLNDY: 'Xử lý nền đường yếu',
+    BUL: 'Bù lún',
+    CPDD1: 'CPĐD loại I',
+    CPDD_GCXM: 'CPĐD gia cố XM',
+    CPDD2: 'CPĐD loại II',
+    BTN_R25: 'BTN rỗng',
+    BTN_C19: 'BTN chặt 19',
+    BTN_C125: 'BTN chặt 12.5',
+  }
+  // Group by itemType + side
+  const map = new Map<string, Map<string, { from: number; to: number }[]>>()
+  for (const line of rawLines) {
+    const name = line.work_items?.name || ''
+    const detected = _detectItemType(name)
+    if (!detected) continue
+    if (line.km_from == null || line.km_to == null || line.km_from === line.km_to) continue
+    const side = line.side || '?'
+    if (!map.has(detected.itemType)) map.set(detected.itemType, new Map())
+    const sideMap = map.get(detected.itemType)!
+    if (!sideMap.has(side)) sideMap.set(side, [])
+    sideMap.get(side)!.push({ from: Math.min(line.km_from, line.km_to), to: Math.max(line.km_from, line.km_to) })
+  }
+  // Merge & format
+  const ORDER = ['K95', 'K98', 'XLNDY', 'BUL', 'CPDD1', 'CPDD_GCXM', 'CPDD2', 'BTN_R25', 'BTN_C19', 'BTN_C125']
+  const result: typeof deploymentTable.value = []
+  for (const itemType of ORDER) {
+    const sideMap = map.get(itemType)
+    if (!sideMap) continue
+    const rows: { side: string; length: number; segments: string[] }[] = []
+    for (const side of ['T', 'P', 'TP']) {
+      const segs = sideMap.get(side)
+      if (!segs || segs.length === 0) continue
+      segs.sort((a, b) => a.from - b.from)
+      const merged: { from: number; to: number }[] = [{ ...segs[0] }]
+      for (let i = 1; i < segs.length; i++) {
+        const last = merged[merged.length - 1]
+        if (segs[i].from <= last.to) {
+          last.to = Math.max(last.to, segs[i].to)
+        } else {
+          merged.push({ ...segs[i] })
+        }
+      }
+      const len = merged.reduce((sum, s) => sum + (s.to - s.from), 0)
+      rows.push({ side, length: len, segments: merged.map(s => _fmtKmRange(s.from, s.to)) })
+    }
+    if (rows.length > 0) {
+      result.push({ label: ITEM_LABELS[itemType] || itemType, itemType, rows })
+    }
+  }
+  deploymentTable.value = result
 }
 
 function _fmtKmRange(kmFrom: number, kmTo: number): string {
