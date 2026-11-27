@@ -124,6 +124,8 @@
               <th class="text-center px-3 py-2">Đơn vị</th>
               <th class="text-right px-3 py-2">KL thiết kế</th>
               <th class="text-right px-3 py-2">KL thực hiện</th>
+              <th class="text-right px-3 py-2">KL trái (T)</th>
+              <th class="text-right px-3 py-2">KL phải (P)</th>
               <th class="text-right px-3 py-2">Tỷ lệ %</th>
             </tr>
           </thead>
@@ -153,6 +155,12 @@
               <td class="px-3 py-2 text-right font-medium"
                 :class="row.total_quantity > 0 ? 'text-primary-700' : 'text-gray-400'">
                 {{ formatNum(row.total_quantity) }}
+              </td>
+              <td class="px-3 py-2 text-right text-gray-600">
+                {{ formatNum(row.total_quantity_T) }}
+              </td>
+              <td class="px-3 py-2 text-right text-gray-600">
+                {{ formatNum(row.total_quantity_P) }}
               </td>
               <td class="px-3 py-2 text-right">
                 <span v-if="row.design_quantity > 0"
@@ -371,7 +379,7 @@ async function loadReport() {
     entryCount.value = entryIds.size
 
     // 3. Aggregate: km-based items sum normally; non-km items use max-per-batch (cọc, K95…)
-    const agg = new Map<string, { structureId: string; sumKm: number; maxByBatch: Map<string, number>; maxBatch: number; minBatch: number; kmSegments: { from: number; to: number; side: string }[] }>()
+    const agg = new Map<string, { structureId: string; sumKm: number; sumKmT: number; sumKmP: number; maxByBatch: Map<string, number>; maxBatch: number; minBatch: number; kmSegments: { from: number; to: number; side: string }[] }>()
     for (const line of rawLines) {
       const entry = line.diary_entries
       if (!entry) continue
@@ -381,7 +389,7 @@ async function loadReport() {
       const key = line.work_item_id
       let item = agg.get(key)
       if (!item) {
-        item = { structureId: structId, sumKm: 0, maxByBatch: new Map(), maxBatch: 0, minBatch: Infinity, kmSegments: [] }
+        item = { structureId: structId, sumKm: 0, sumKmT: 0, sumKmP: 0, maxByBatch: new Map(), maxBatch: 0, minBatch: Infinity, kmSegments: [] }
         agg.set(key, item)
       }
       const hasKm = line.km_from != null
@@ -393,8 +401,11 @@ async function loadReport() {
       // Continuous-unit non-km items (m³ K95…): same batch recorded multiple times → max per batch
       const INTEGER_UNITS = ['cọc', 'chiếc', 'bộ', 'thanh', 'cái', 'tấm', 'trụ', 'cây', 'mố']
       const isIntUnit = INTEGER_UNITS.includes(line.work_items?.unit ?? '')
+      const lineSide = line.side || ''
       if (hasKm || isIntUnit) {
         item.sumKm += (line.quantity || 0)
+        if (lineSide === 'T') item.sumKmT += (line.quantity || 0)
+        else if (lineSide === 'P') item.sumKmP += (line.quantity || 0)
       } else {
         const bk = `${line.side ?? ''}|${line.batch_number ?? ''}`
         item.maxByBatch.set(bk, Math.max(item.maxByBatch.get(bk) ?? 0, line.quantity || 0))
@@ -418,10 +429,20 @@ async function loadReport() {
         let total = 0
         let maxBatch = 0
         let minBatch = 0
+        let totalT = 0, totalP = 0
         if (aggEntry) {
           total = aggEntry.sumKm + Array.from(aggEntry.maxByBatch.values() as Iterable<number>).reduce((a: number, b: number) => a + b, 0)
           maxBatch = aggEntry.maxBatch
           minBatch = aggEntry.minBatch === Infinity ? 0 : aggEntry.minBatch
+          // Tính KL theo bên T/P
+          totalT = aggEntry.sumKmT
+          totalP = aggEntry.sumKmP
+          // maxByBatch: batch key = 'side|batch' → tách theo side
+          for (const [bk, val] of aggEntry.maxByBatch) {
+            const bkSide = bk.split('|')[0]
+            if (bkSide === 'T') totalT += val
+            else if (bkSide === 'P') totalP += val
+          }
         }
         const isRoad = !NON_LINEAR.has(typeCode)
         // Lớp 1=trên cùng (đắp sau), lớp N=dưới cùng (đắp trước)
@@ -476,6 +497,8 @@ async function loadReport() {
           total_quantity: total,
           max_batch: maxBatch,
           layer_info: layerInfo,
+          total_quantity_T: totalT,
+          total_quantity_P: totalP,
           deployed_length: deployedLength,
           deployed_detail: deployedDetail,
           _sortOrder: 0,
@@ -500,20 +523,27 @@ async function loadReport() {
       const completedQty = btRow ? btRow.total_quantity : Math.max(...groupRows.map((r: any) => r.total_quantity))
       const designQty = btRow?.design_quantity || groupRows[0].design_quantity || null
       const tpl = groupRows[0]
+      // Tính KL T/P cho cọc: lấy từ btRow hoặc max
+      const pileT = btRow ? (btRow.total_quantity_T || 0) : Math.max(...groupRows.map((r: any) => r.total_quantity_T || 0))
+      const pileP = btRow ? (btRow.total_quantity_P || 0) : Math.max(...groupRows.map((r: any) => r.total_quantity_P || 0))
       mergedPiles.push({
         ...tpl,
         work_item_name: 'Cọc KN hoàn thành',
         total_quantity: completedQty,
+        total_quantity_T: pileT,
+        total_quantity_P: pileP,
         design_quantity: designQty,
         layer_info: '',
         _merged: true,
         _sortOrder: 0,
       })
       if (!bridgeTotals.has(tpl.structure_id)) {
-        bridgeTotals.set(tpl.structure_id, { name: tpl.structure_name, type: tpl.type_name, typeCode: tpl.type_code, total: 0, design: 0 })
+        bridgeTotals.set(tpl.structure_id, { name: tpl.structure_name, type: tpl.type_name, typeCode: tpl.type_code, total: 0, totalT: 0, totalP: 0, design: 0 })
       }
       const bt = bridgeTotals.get(tpl.structure_id)!
       bt.total += completedQty
+      bt.totalT += pileT
+      bt.totalP += pileP
       if (designQty) bt.design += designQty
     }
     for (const [structId, info] of bridgeTotals) {
@@ -527,6 +557,8 @@ async function loadReport() {
         unit: 'cọc',
         design_quantity: info.design || null,
         total_quantity: info.total,
+        total_quantity_T: info.totalT,
+        total_quantity_P: info.totalP,
         max_batch: 0,
         layer_info: '',
         _bridgeTotal: true,
@@ -585,6 +617,8 @@ async function exportExcel() {
       'Đơn vị': r.unit,
       'KL thiết kế': r.design_quantity || '',
       'KL thực hiện': r.total_quantity || '',
+      'KL trái (T)': r.total_quantity_T || '',
+      'KL phải (P)': r.total_quantity_P || '',
       'Tỷ lệ (%)': r.design_quantity ? ((r.total_quantity / r.design_quantity) * 100).toFixed(1) : '',
     }))
     const ws = XLSX.utils.json_to_sheet(wsData)
