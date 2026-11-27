@@ -468,7 +468,7 @@ watch(() => selectedTypeId.value, () => { loadAllCompletions() })
 async function syncGirderUnits() {
   try {
     const girderNames = ['Gia công CT dầm', 'Lắp dựng ván khuôn', 'Đổ BT dầm', 'Bảo dưỡng dầm', 'Căng kéo cáp DƯL', 'Vận chuyển dầm']
-    const { data, error } = await 
+    const { data, error } = await $supabase
       .from('work_items')
       .select('id, name, unit, group_name')
       .eq('group_name', 'Đúc dầm')
@@ -476,7 +476,7 @@ async function syncGirderUnits() {
       .neq('unit', 'dầm')
     if (error || !data || data.length === 0) return
     for (const item of data) {
-      await .from('work_items').update({ unit: 'dầm' }).eq('id', item.id)
+      await $supabase.from('work_items').update({ unit: 'dầm' }).eq('id', item.id)
     }
     console.log('[syncGirderUnits] Updated', data.length, 'items to unit=dầm')
   } catch (e) {
