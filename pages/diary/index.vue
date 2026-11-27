@@ -702,7 +702,19 @@ const designQtyItems = computed(() => {
   return workItems.value.filter(w => (w.group_name || '') === designQtyTab.value)
 })
 
-function openDesignQty() {
+async function openDesignQty() {
+  // Đồng bộ đơn vị Đúc dầm trước khi hiển thị
+  try {
+    const girderNames = ['Gia công CT dầm', 'Lắp dựng ván khuôn', 'Đổ BT dầm', 'Bảo dưỡng dầm', 'Căng kéo cáp DƯL', 'Vận chuyển dầm']
+    const toFix = workItems.value.filter(w => w.group_name === 'Đúc dầm' && girderNames.includes(w.name) && w.unit !== 'dầm')
+    if (toFix.length > 0) {
+      for (const w of toFix) {
+        await $supabase.from('work_items').update({ unit: 'dầm' }).eq('id', w.id)
+        w.unit = 'dầm'
+      }
+    }
+  } catch (e) { console.warn('[syncGirderUnits]', e) }
+
   // Populate current design_quantity values
   for (const w of workItems.value) {
     designQtyValues[w.id] = w.design_quantity ?? null
