@@ -464,11 +464,33 @@ async function loadAllCompletions() {
 
 watch(() => selectedTypeId.value, () => { loadAllCompletions() })
 
+// Đồng bộ đơn vị từ template cho các hạng mục Đúc dầm đã tạo trước
+async function syncGirderUnits() {
+  try {
+    const girderNames = ['Gia công CT dầm', 'Lắp dựng ván khuôn', 'Đổ BT dầm', 'Bảo dưỡng dầm', 'Căng kéo cáp DƯL', 'Vận chuyển dầm']
+    const { data, error } = await 
+      .from('work_items')
+      .select('id, name, unit, group_name')
+      .eq('group_name', 'Đúc dầm')
+      .in('name', girderNames)
+      .neq('unit', 'dầm')
+    if (error || !data || data.length === 0) return
+    for (const item of data) {
+      await .from('work_items').update({ unit: 'dầm' }).eq('id', item.id)
+    }
+    console.log('[syncGirderUnits] Updated', data.length, 'items to unit=dầm')
+  } catch (e) {
+    console.warn('[syncGirderUnits]', e)
+  }
+}
+
 onMounted(async () => {
   if (!isAdmin.value) { router.push('/'); return }
   try {
     types.value = await getTypes()
     allStructures.value = await getStructures()
+    // Đồng bộ đơn vị Đúc dầm cho các cầu cũ
+    await syncGirderUnits()
     if (types.value.length) {
       selectedTypeId.value = types.value[0].id
       await loadAllCompletions()
